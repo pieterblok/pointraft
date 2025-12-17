@@ -1,4 +1,4 @@
-# PointRAFT: Regression of Amodal Full Three-dimensional shape properties from partial point clouds
+# PointRAFT: Regression of 3D shape properties from partial point clouds
 
 ### Installation
 
