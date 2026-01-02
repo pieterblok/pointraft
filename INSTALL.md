@@ -16,6 +16,8 @@ Test date: 17-12-2025. <br/> <br/>
 - pip3 install torchvision==0.23.0 
 - pip3 install torch_cluster -f https://data.pyg.org/whl/torch-2.8.0+cu128.html
 - pip3 install torch_geometric==2.7.0
+- pip3 install opencv-python==4.12.0.88
+- pip3 install optuna==4.6.0
 - pip3 install wheel
 - git clone https://github.com/leonardodalinky/pytorch_fpsample.git
 - cd pytorch_fpsample/
