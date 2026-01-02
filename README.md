@@ -24,6 +24,7 @@ A subset of our dataset is publicly available at [3DPotatoTwin](https://huggingf
     |   |   |   |-- 2R1-2_pcd_087.ply
     |   |   |   |-- ...
     |   |   |-- ...
+<br/>
 
 ## Pretrained weights
 [pointraft_potato.pth](https://drive.google.com/file/d/1EfBDY5WP037dblrIWtWqiO1EHMVs5EwP/view?usp=sharing)
@@ -46,6 +47,7 @@ A subset of our dataset is publicly available at [3DPotatoTwin](https://huggingf
     ```python
     python test.py
     ```
+<br/>
 
 ## Results
 On a test set of 5,254 point clouds from 172 unique potato tubers, PointRAFT achieved a mean absolute error (MAE) of 12.0 g and a root mean squared error (RMSE) of 17.2 g, substantially outperforming a linear regression baseline, which achieved an MAE of 23.0 g and an RMSE of 31.8 g.
@@ -56,7 +58,7 @@ On a test set of 5,254 point clouds from 172 unique potato tubers, PointRAFT ach
 ![2025-051](./misc/2025-051.png?raw=true)<br/><br/>
 
 ![2025-115](./misc/2025-115.png?raw=true)
-<br/>
+<br/><br/>
 
 ## Citation
 Refer to our research article:
