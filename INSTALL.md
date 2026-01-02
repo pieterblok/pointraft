@@ -9,6 +9,10 @@ Test date: 17-12-2025. <br/> <br/>
 - sudo apt install python3-venv -y
 - python3 -m venv ~/prft <br/> <br/>
 
+**Download the code repository:**
+- git clone https://github.com/pieterblok/pointraft.git
+- cd pointraft <br/> <br/>
+
 **Install the custom software packages (in python virtual environment):**
 - source ~/prft/bin/activate
 - pip3 install open3d==0.19.0
