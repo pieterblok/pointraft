@@ -12,7 +12,7 @@ PointRAFT is designed for high-throughput inference: on a laptop equipped with a
 <br/><br/>
 
 ## Dataset
-A subset of our dataset is publicly available at [3DPotatoTwin](https://huggingface.co/datasets/UTokyo-FieldPhenomics-Lab/3DPotatoTwin). Download and unzip the dataset locally to reproduce our training and testing procedures. The partial point clouds (in .ply format) should be organized as follows:
+A subset of our dataset is publicly available at [3DPotatoTwin](https://huggingface.co/datasets/UTokyo-FieldPhenomics-Lab/3DPotatoTwin). Download and unzip the dataset locally to reproduce our training and testing procedures. The partial point clouds (in .ply format) and the csv files should be organized as follows:
 
     ./data/
     |-- 3DPotatoTwin/
@@ -25,6 +25,8 @@ A subset of our dataset is publicly available at [3DPotatoTwin](https://huggingf
     |   |   |   |   |-- 2R1-2_pcd_087.ply
     |   |   |   |   |-- ...
     |   |   |   |-- ...
+    |   |-- ground_truth.csv
+    |   |-- splits.csv
 <br/>
 
 ## Pretrained weights
