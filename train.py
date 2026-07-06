@@ -18,7 +18,12 @@ from torch_geometric.typing import WITH_TORCH_CLUSTER
 from data import *
 from utils import *
 from models import *
-model_dict = {'pointraft': PointRAFT}
+model_dict = {'dgcnn': DGCNN,
+              'pointraft': PointRAFT,
+              'pointnet': PointNet,
+              'pointnet2': PointNet2,
+              'pointtransformer': PointTransformer,
+              'randlanet': RandLANet}
 
 
 if not WITH_TORCH_CLUSTER:
