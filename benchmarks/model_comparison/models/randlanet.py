@@ -2,13 +2,9 @@
 addressed in the `"RandLA-Net: Efficient Semantic Segmentation of Large-Scale
 Point Clouds" <https://arxiv.org/abs/1911.11236>`_ paper.
 """
-import os.path as osp
-
 import torch
-import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Linear
-
 from torch_geometric.nn import MLP
 from torch_geometric.nn.aggr import MaxAggregation
 from torch_geometric.nn.conv import MessagePassing
@@ -18,7 +14,7 @@ from torch_geometric.typing import WITH_TORCH_CLUSTER
 from torch_geometric.utils import softmax
 
 if not WITH_TORCH_CLUSTER:
-    quit("This example requires 'torch-cluster'")
+    raise ImportError("RandLANet requires 'torch-cluster'")
 
 # Default activation and batch norm parameters used by RandLA-Net:
 lrelu02_kwargs = {'negative_slope': 0.2}
@@ -156,7 +152,12 @@ class RandLANet(torch.nn.Module):
         x = data.x
         pos = data.pos
         batch = data.batch
-        ptr = data.ptr
+        ptr = getattr(data, 'ptr', None)
+        if ptr is None:
+            ptr = torch.cat([
+                batch.new_zeros(1),
+                torch.bincount(batch).cumsum(dim=0),
+            ])
 
         x = x if x is not None else pos
         b1 = self.block1(self.fc0(x), pos, batch)
@@ -170,4 +171,4 @@ class RandLANet(torch.nn.Module):
 
         x = self.mlp_classif(x)
 
-        return self.fc_classif(x)
+        return self.fc_classif(x).squeeze(-1)

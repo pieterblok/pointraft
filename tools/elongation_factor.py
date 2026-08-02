@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
-import open3d as o3d
+
 import numpy as np
+import open3d as o3d
 import pandas as pd
 from tqdm import tqdm
 

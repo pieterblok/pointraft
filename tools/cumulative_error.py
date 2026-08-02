@@ -1,15 +1,18 @@
 import os
 from pathlib import Path
-import pandas as pd
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent
 resultsfolder = os.path.join(project_root, "results")
 
-df_lr = pd.read_csv(os.path.join(resultsfolder, "linear_regression.csv"))
-df_pr = pd.read_csv(os.path.join(resultsfolder, "pointraft.csv"))
+df_lr = pd.read_csv(
+    os.path.join(resultsfolder, "model_comparison", "predictions", "linear_regression.csv")
+)
+df_pr = pd.read_csv(os.path.join(resultsfolder, "pointraft", "predictions.csv"))
 
 gt_lr, pred_lr = df_lr["gt"].values, df_lr["pred"].values
 gt_pr, pred_pr = df_pr["gt"].values, df_pr["pred"].values

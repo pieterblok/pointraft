@@ -1,0 +1,41 @@
+[project]
+name = "pointraft-jetson-inference"
+version = "0.1.0"
+description = "PointRAFT inference environment for JetPack 5.1 on Jetson"
+requires-python = ">=3.8,<3.9"
+dependencies = [
+    "ninja==1.11.1.4",
+    "numpy==1.24.4",
+    "open3d==0.18.0",
+    "opencv-python-headless==4.10.0.84",
+    "pandas==2.0.3",
+    "setuptools==75.3.4",
+    "torch==2.0.0a0+8aa34602.nv23.3",
+    "torch-cluster==1.6.3",
+    "torch-fpsample==0.1.0",
+    "torch-geometric==2.6.1",
+    "wheel==0.45.1",
+]
+
+[tool.uv]
+package = false
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'aarch64' and python_version == '3.8'",
+]
+
+[tool.uv.sources]
+torch = { url = "https://developer.download.nvidia.com/compute/redist/jp/v51/pytorch/torch-2.0.0a0+8aa34602.nv23.03-cp38-cp38-linux_aarch64.whl" }
+torch-cluster = { git = "https://github.com/rusty1s/pytorch_cluster.git", rev = "29cd22bf1a5b82fc06b108d6573f81302c5d6b12" }
+torch-fpsample = { git = "https://github.com/leonardodalinky/pytorch_fpsample.git", rev = "be93a0859d196d0d2d0562bfc5e44e24b01a98de" }
+
+[[tool.uv.dependency-metadata]]
+name = "torch-cluster"
+version = "1.6.3"
+requires-dist = ["scipy"]
+
+[[tool.uv.dependency-metadata]]
+name = "torch-fpsample"
+version = "0.1.0"
+# NVIDIA's 2.0.0 alpha build predates the final PEP 440 2.0 release but is
+# ABI-compatible after applying patches/torch-fpsample-torch20.patch.
+requires-dist = []

@@ -1,31 +1,29 @@
 ## thanks to: https://colab.research.google.com/drive/1D45E5bUK3gQ40YpZo65ozs7hg5l-eo_U?usp=sharing#scrollTo=hUbRw_BhLuXr
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import os
-from pathlib import Path
-import sys
 import random
-import numpy as np
-import pandas as pd
+import sys
+from pathlib import Path
 
+import numpy as np
+import optuna
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import torch_geometric.transforms as T
+from sklearn.metrics import root_mean_squared_error
 from torch_geometric.loader import DataLoader, ImbalancedSampler
 from torch_geometric.typing import WITH_TORCH_CLUSTER
-from sklearn.metrics import root_mean_squared_error
-import optuna
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from data import *
+from models import PointRAFT
 from utils import *
-from models import *
-model_dict = {'pointraft': PointRAFT}
-
 
 if not WITH_TORCH_CLUSTER:
     quit("This code requires 'torch-cluster'")
@@ -69,8 +67,7 @@ def objective(trial):
 
     ## Initialize the training parameters
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_name = 'pointraft'
-    model = model_dict[model_name]().to(device)
+    model = PointRAFT().to(device)
 
 
     ## Optuna choices

@@ -1,10 +1,11 @@
 import os
 from pathlib import Path
-import open3d as o3d
+
 import numpy as np
+import open3d as o3d
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 from tqdm import tqdm
 
 
@@ -20,13 +21,13 @@ def collect_ply_files(root_dir):
 
 if __name__ == "__main__":
     current_file = Path(__file__).resolve()
-    project_root = current_file.parent.parent
+    project_root = current_file.parents[3]
     datafolder = os.path.join(project_root, 'data', '3DPotatoTwin')
 
     data_root = os.path.join(datafolder, '1_rgbd', '2_pcd')
     splits_csv = os.path.join(datafolder, 'splits.csv')
     target_csv = os.path.join(datafolder, 'ground_truth.csv')
-    resultsfolder = os.path.join(project_root, 'results')
+    resultsfolder = os.path.join(project_root, 'results', 'model_comparison', 'predictions')
 
     conveyor_depth = {'2023': 0.345, '2024': 0.460, '2025': 0.465}
     search_col = "growing_season"
@@ -107,7 +108,8 @@ if __name__ == "__main__":
     print(f"Linear regression formula:\nweight_g_inctack = {w0:.4f} + {w1:.4f}*length_mm + {w2:.4f}*width_mm + {w3:.4f}*height_mm")
     
     df_output = pd.DataFrame({'file_name': file_names, 'unique_id': unique_ids, 'gt': y_test, 'pred': y_pred, 'diff': abs(y_test-y_pred)})
-    df_output.to_csv(os.path.join(resultsfolder, 'linear_regression.csv'), index=False)  
+    Path(resultsfolder).mkdir(parents=True, exist_ok=True)
+    df_output.to_csv(os.path.join(resultsfolder, 'linear_regression.csv'), index=False)
 
     try:
         cultivar_map = dict(zip(df_gt.index, df_gt['cultivar']))

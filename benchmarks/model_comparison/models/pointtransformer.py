@@ -2,7 +2,6 @@
 
 import torch
 from torch.nn import Linear as Lin
-
 from torch_geometric.nn import (
     MLP,
     PointTransformerConv,
@@ -48,7 +47,7 @@ class TransitionDown(torch.nn.Module):
 
     def forward(self, x, pos, batch):
         # FPS sampling
-        id_clusters = fps(pos, ratio=self.ratio, batch=batch)
+        id_clusters = fps(pos, ratio=self.ratio, batch=batch, random_start=False)
 
         # compute for each cluster the k nearest points
         sub_batch = batch[id_clusters] if batch is not None else None
@@ -70,9 +69,10 @@ class TransitionDown(torch.nn.Module):
 
 
 class PointTransformer(torch.nn.Module):
-    def __init__(self, in_channels=0, out_channels=1, dim_model=[32, 64, 128, 256, 512], k=16):
+    def __init__(self, in_channels=0, out_channels=1, dim_model=None, k=16):
         super().__init__()
         self.k = k
+        dim_model = dim_model or [32, 64, 128, 256, 512]
 
         # dummy feature is created if there is none given
         in_channels = max(in_channels, 1)
@@ -107,7 +107,7 @@ class PointTransformer(torch.nn.Module):
 
         # add dummy features in case there is none
         if x is None:
-            x = torch.ones((pos.shape[0], 1), device=pos.get_device())
+            x = torch.ones((pos.shape[0], 1), device=pos.device)
 
         # first block
         x = self.mlp_input(x)
@@ -124,4 +124,4 @@ class PointTransformer(torch.nn.Module):
         # GlobalAveragePooling
         x = global_mean_pool(x, batch)
 
-        return self.regression_head(x)
+        return self.regression_head(x).squeeze(-1)
