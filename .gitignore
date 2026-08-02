@@ -208,12 +208,12 @@ __marimo__/
 
 # Custom folders
 .vscode
-weights
+weights/
 data/3DPotatoTwin/1_rgbd
 data/3DPotatoTwin/2_sfm
 data/3DPotatoTwin/3_pair
 data/3DPotatoTwin/readme.md
-misc/architecture_optuna.py
-misc/input_points_optuna.py
-results/pointraft.csv
-results/linear_regression.csv
+.agents/
+**/.upstream/
+results/**
+!results/README.md
