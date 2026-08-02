@@ -12,7 +12,7 @@ class SAModule(torch.nn.Module):
         self.conv = PointNetConv(nn, add_self_loops=False)
 
     def forward(self, x, pos, batch):
-        idx = fps(pos, batch, ratio=self.ratio)
+        idx = fps(pos, batch, ratio=self.ratio, random_start=False)
         row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
         edge_index = torch.stack([col, row], dim=0)
