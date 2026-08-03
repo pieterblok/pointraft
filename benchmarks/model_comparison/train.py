@@ -209,6 +209,8 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     visualize = False
     model = BENCHMARK_MODEL_REGISTRY[model_name]().to(device)
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
 
     criterion = nn.SmoothL1Loss(beta=20)
     optimizer = optim.Adam(
@@ -293,6 +295,18 @@ def main() -> None:
             print("Saved best model!")
         scheduler.step()
 
+    peak_allocated_bytes = None
+    peak_reserved_bytes = None
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        peak_allocated_bytes = torch.cuda.max_memory_allocated(device)
+        peak_reserved_bytes = torch.cuda.max_memory_reserved(device)
+        print(
+            "Peak CUDA memory: "
+            f"allocated={peak_allocated_bytes / 1024**2:.1f} MiB, "
+            f"reserved={peak_reserved_bytes / 1024**2:.1f} MiB"
+        )
+
     write_json(
         provenance_path,
         {
@@ -316,7 +330,13 @@ def main() -> None:
             "max_train_batches": args.max_train_batches,
             "max_val_batches": args.max_val_batches,
             "model": model_name,
+            "model_parameters": sum(
+                parameter.numel() for parameter in model.parameters()
+            ),
+            "model_variant": getattr(model, "variant", model_name),
             "optimizer": "Adam",
+            "peak_cuda_allocated_bytes": peak_allocated_bytes,
+            "peak_cuda_reserved_bytes": peak_reserved_bytes,
             "scheduler": "ExponentialLR(gamma=0.97)",
             "seed": RANDOM_SEED,
             "splits_sha256": sha256_file(Path(splits_csv)),

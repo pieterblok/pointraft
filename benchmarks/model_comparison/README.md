@@ -10,8 +10,25 @@ training budget, flat checkpoint contract, and result schema.
 | --- | --- | --- | --- |
 | DGCNN | [WangYueFt/dgcnn](https://github.com/WangYueFt/dgcnn/blob/master/pytorch/model.py) | [`models/dgcnn.py`](models/dgcnn.py), adapted to scalar regression | MIT, [included text](licenses/DGCNN-MIT.txt) |
 | PointMLP | [ma-xu/pointMLP-pytorch](https://github.com/ma-xu/pointMLP-pytorch/blob/main/classification_ModelNet40/models/pointmlp.py) | [`models/pointmlp.py`](models/pointmlp.py), adapted to scalar regression | Apache-2.0, [included text](licenses/POINTMLP-APACHE-2.0.txt) |
+| RandLA-Net | [RandLA-Net paper and official SemanticKITTI configuration](https://github.com/QingyongHu/RandLA-Net) | [`models/randlanet.py`](models/randlanet.py), independently written PyTorch/PyG four-stage encoder adapted to scalar regression | Local implementation follows the project license; official reference code is CC BY-NC-SA 4.0 and was not copied |
 
 The remaining comparison implementations are repository-specific regression
 baselines. PTv3 downloads a pinned subset of the upstream Pointcept source at
 runtime and verifies each downloaded file; its details are documented in
 [`models/ptv3/README.md`](models/ptv3/README.md).
+
+The canonical `randlanet` model retains four encoder levels with SemanticKITTI widths
+`d_out=(16, 64, 128, 256)`, 16-neighbor grouping, 4x seeded random
+subsampling, two attentive pools per local feature aggregation block, and
+neighborhood max pooling. The segmentation decoder is omitted because the
+benchmark target is object-level; deepest features are globally max-pooled and
+passed through a `512 -> 64 -> 32 -> 1` scalar head. It is a PyTorch
+implementation of the official configuration, not the official implementation.
+It replaces the earlier two-stage PyG classification adaptation, which remains
+documented only in historical benchmark provenance.
+
+The accepted four-stage artifacts were originally produced under the
+`randlanet_official` run name and promoted byte-for-byte to the canonical
+`randlanet` paths. Their provenance intentionally retains the original command
+and artifact name; the superseded two-stage artifacts are archived locally with
+the `randlanet_legacy` prefix.

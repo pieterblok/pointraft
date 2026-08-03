@@ -1,174 +1,346 @@
-"""An adaptation of RandLA-Net to the classification task, which was not
-addressed in the `"RandLA-Net: Efficient Semantic Segmentation of Large-Scale
-Point Clouds" <https://arxiv.org/abs/1911.11236>`_ paper.
+"""Official-configuration RandLA-Net encoder adapted to scalar regression.
+
+This is an independent PyTorch/PyG implementation based on the RandLA-Net
+paper and its published SemanticKITTI configuration. It does not copy the
+official TensorFlow implementation.
 """
+
+from typing import Any
+
 import torch
-from torch import Tensor
-from torch.nn import Linear
-from torch_geometric.nn import MLP
+from torch import Tensor, nn
+from torch_geometric.nn import global_max_pool
 from torch_geometric.nn.aggr import MaxAggregation
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.pool import knn_graph
-from torch_geometric.nn.pool.decimation import decimation_indices
+from torch_geometric.nn.pool import knn, knn_graph
 from torch_geometric.typing import WITH_TORCH_CLUSTER
 from torch_geometric.utils import softmax
 
 if not WITH_TORCH_CLUSTER:
-    raise ImportError("RandLANet requires 'torch-cluster'")
-
-# Default activation and batch norm parameters used by RandLA-Net:
-lrelu02_kwargs = {'negative_slope': 0.2}
-bn099_kwargs = {'momentum': 0.01, 'eps': 1e-6}
+    raise ImportError("RandLA-Net requires 'torch-cluster'")
 
 
-## altered from: https://github.com/pyg-team/pytorch_geometric/blob/master/examples/point_transformer_classification.py
+class SharedMLP(nn.Module):
+    """Apply the RandLA-Net linear, batch-normalization, and activation order."""
 
-
-class SharedMLP(MLP):
-    """SharedMLP following RandLA-Net paper."""
-    def __init__(self, *args, **kwargs):
-        # BN + Act always active even at last layer.
-        kwargs['plain_last'] = False
-        # LeakyRelu with 0.2 slope by default.
-        kwargs['act'] = kwargs.get('act', 'LeakyReLU')
-        kwargs['act_kwargs'] = kwargs.get('act_kwargs', lrelu02_kwargs)
-        # BatchNorm with 1 - 0.99 = 0.01 momentum
-        # and 1e-6 eps by defaut (tensorflow momentum != pytorch momentum)
-        kwargs['norm_kwargs'] = kwargs.get('norm_kwargs', bn099_kwargs)
-        super().__init__(*args, **kwargs)
-
-
-class LocalFeatureAggregation(MessagePassing):
-    """Positional encoding of points in a neighborhood."""
-    def __init__(self, channels):
-        super().__init__(aggr='add')
-        self.mlp_encoder = SharedMLP([10, channels // 2])
-        self.mlp_attention = SharedMLP([channels, channels], bias=False,
-                                       act=None, norm=None)
-        self.mlp_post_attention = SharedMLP([channels, channels])
-
-    def forward(self, edge_index, x, pos):
-        out = self.propagate(edge_index, x=x, pos=pos)  # N, d_out
-        out = self.mlp_post_attention(out)  # N, d_out
-        return out
-
-    def message(self, x_j: Tensor, pos_i: Tensor, pos_j: Tensor,
-                index: Tensor) -> Tensor:
-        """Local Spatial Encoding (locSE) and attentive pooling of features.
-
-        Args:
-            x_j (Tensor): neighboors features (K,d)
-            pos_i (Tensor): centroid position (repeated) (K,3)
-            pos_j (Tensor): neighboors positions (K,3)
-            index (Tensor): index of centroid positions
-                (e.g. [0,...,0,1,...,1,...,N,...,N])
-
-        Returns:
-            (Tensor): locSE weighted by feature attention scores.
-
-        """
-        # Encode local neighboorhod structural information
-        pos_diff = pos_j - pos_i
-        distance = torch.sqrt((pos_diff * pos_diff).sum(1, keepdim=True))
-        relative_infos = torch.cat([pos_i, pos_j, pos_diff, distance],
-                                   dim=1)  # N * K, d
-        local_spatial_encoding = self.mlp_encoder(relative_infos)  # N * K, d
-        local_features = torch.cat([x_j, local_spatial_encoding],
-                                   dim=1)  # N * K, 2d
-
-        # Attention will weight the different features of x
-        # along the neighborhood dimension.
-        att_features = self.mlp_attention(local_features)  # N * K, d_out
-        att_scores = softmax(att_features, index=index)  # N * K, d_out
-
-        return att_scores * local_features  # N * K, d_out
-
-
-class DilatedResidualBlock(torch.nn.Module):
     def __init__(
         self,
-        num_neighbors,
-        d_in: int,
-        d_out: int,
-    ):
+        in_channels: int,
+        out_channels: int,
+        *,
+        activation: bool = True,
+    ) -> None:
         super().__init__()
-        self.num_neighbors = num_neighbors
+        self.linear = nn.Linear(in_channels, out_channels, bias=False)
+        self.batch_norm = nn.BatchNorm1d(out_channels, momentum=0.01, eps=1e-6)
+        self.activation = nn.LeakyReLU(negative_slope=0.2) if activation else nn.Identity()
+
+    def forward(self, features: Tensor) -> Tensor:
+        """Transform a point or edge feature matrix.
+
+        Parameters
+        ----------
+        features
+            Feature matrix with shape ``[items, channels]``.
+
+        Returns
+        -------
+        Tensor
+            Transformed feature matrix.
+        """
+        return self.activation(self.batch_norm(self.linear(features)))
+
+
+class AttentivePooling(nn.Module):
+    """Aggregate neighboring features with channel-wise learned attention."""
+
+    def __init__(self, in_channels: int, out_channels: int) -> None:
+        super().__init__()
+        self.attention = nn.Linear(in_channels, in_channels, bias=False)
+        self.output_mlp = SharedMLP(in_channels, out_channels)
+
+    def forward(
+        self,
+        neighbor_features: Tensor,
+        center_index: Tensor,
+        num_centers: int,
+    ) -> Tensor:
+        """Pool edge features onto their center points.
+
+        Parameters
+        ----------
+        neighbor_features
+            Edge feature matrix with shape ``[edges, channels]``.
+        center_index
+            Target point index for every edge.
+        num_centers
+            Number of target points.
+
+        Returns
+        -------
+        Tensor
+            Pooled center features with shape ``[num_centers, out_channels]``.
+        """
+        scores = softmax(
+            self.attention(neighbor_features),
+            index=center_index,
+            num_nodes=num_centers,
+        )
+        pooled = neighbor_features.new_zeros(num_centers, neighbor_features.size(1))
+        pooled.index_add_(0, center_index, scores * neighbor_features)
+        return self.output_mlp(pooled)
+
+
+class LocalFeatureAggregation(nn.Module):
+    """Apply two official RandLA-Net local spatial encodings and pools."""
+
+    relative_position_channels = 10
+
+    def __init__(self, d_out: int) -> None:
+        super().__init__()
+        self.d_out = d_out
+        self.position_mlp1 = SharedMLP(self.relative_position_channels, d_out // 2)
+        self.pool1 = AttentivePooling(d_out, d_out // 2)
+        self.position_mlp2 = SharedMLP(d_out // 2, d_out // 2)
+        self.pool2 = AttentivePooling(d_out, d_out)
+
+    @staticmethod
+    def relative_position_encoding(
+        positions: Tensor,
+        neighbor_index: Tensor,
+        center_index: Tensor,
+    ) -> Tensor:
+        """Build distance, relative XYZ, center XYZ, and neighbor XYZ features."""
+        center = positions[center_index]
+        neighbor = positions[neighbor_index]
+        relative = center - neighbor
+        distance = torch.linalg.vector_norm(relative, dim=1, keepdim=True)
+        return torch.cat((distance, relative, center, neighbor), dim=1)
+
+    def forward(self, features: Tensor, positions: Tensor, edge_index: Tensor) -> Tensor:
+        """Aggregate local features around every center point.
+
+        Parameters
+        ----------
+        features
+            Reduced point features with shape ``[points, d_out // 2]``.
+        positions
+            XYZ coordinates with shape ``[points, 3]``.
+        edge_index
+            Source-to-target KNN edges with shape ``[2, edges]``.
+
+        Returns
+        -------
+        Tensor
+            Aggregated point features with shape ``[points, d_out]``.
+        """
+        neighbor_index, center_index = edge_index
+        relative = self.relative_position_encoding(
+            positions, neighbor_index, center_index
+        )
+        spatial_features = self.position_mlp1(relative)
+        first_neighbors = torch.cat(
+            (features[neighbor_index], spatial_features), dim=1
+        )
+        first_pooled = self.pool1(first_neighbors, center_index, features.size(0))
+
+        spatial_features = self.position_mlp2(spatial_features)
+        second_neighbors = torch.cat(
+            (first_pooled[neighbor_index], spatial_features), dim=1
+        )
+        return self.pool2(second_neighbors, center_index, features.size(0))
+
+
+class DilatedResidualBlock(nn.Module):
+    """Official RandLA-Net bottleneck, two-pool LFA, and residual projection."""
+
+    def __init__(self, d_in: int, d_out: int, num_neighbors: int) -> None:
+        super().__init__()
         self.d_in = d_in
         self.d_out = d_out
+        self.output_channels = 2 * d_out
+        self.num_neighbors = num_neighbors
+        self.input_mlp = SharedMLP(d_in, d_out // 2)
+        self.local_feature_aggregation = LocalFeatureAggregation(d_out)
+        self.output_mlp = SharedMLP(d_out, self.output_channels, activation=False)
+        self.shortcut = SharedMLP(d_in, self.output_channels, activation=False)
+        self.activation = nn.LeakyReLU(negative_slope=0.2)
 
-        # MLP on input
-        self.mlp1 = SharedMLP([d_in, d_out // 8])
-        # MLP on input, and the result is summed with the output of mlp2
-        self.shortcut = SharedMLP([d_in, d_out], act=None)
-        # MLP on output
-        self.mlp2 = SharedMLP([d_out // 2, d_out], act=None)
+    def forward(self, features: Tensor, positions: Tensor, batch: Tensor) -> Tensor:
+        """Encode one point hierarchy level.
 
-        self.lfa1 = LocalFeatureAggregation(d_out // 4)
-        self.lfa2 = LocalFeatureAggregation(d_out // 2)
+        Parameters
+        ----------
+        features
+            Input features with shape ``[points, d_in]``.
+        positions
+            XYZ coordinates with shape ``[points, 3]``.
+        batch
+            Cloud index for each point.
 
-        self.lrelu = torch.nn.LeakyReLU(**lrelu02_kwargs)
-
-    def forward(self, x, pos, batch):
-        edge_index = knn_graph(pos, self.num_neighbors, batch=batch, loop=True)
-
-        shortcut_of_x = self.shortcut(x)  # N, d_out
-        x = self.mlp1(x)  # N, d_out//8
-        x = self.lfa1(edge_index, x, pos)  # N, d_out//2
-        x = self.lfa2(edge_index, x, pos)  # N, d_out//2
-        x = self.mlp2(x)  # N, d_out
-        x = self.lrelu(x + shortcut_of_x)  # N, d_out
-
-        return x, pos, batch
-
-
-def decimate(tensors, ptr: Tensor, decimation_factor: int):
-    """Decimates each element of the given tuple of tensors."""
-    idx_decim, ptr_decim = decimation_indices(ptr, decimation_factor)
-    tensors_decim = tuple(tensor[idx_decim] for tensor in tensors)
-    return tensors_decim, ptr_decim
+        Returns
+        -------
+        Tensor
+            Encoded features with shape ``[points, 2 * d_out]``.
+        """
+        points_per_cloud = torch.bincount(batch)
+        neighbors = min(self.num_neighbors, int(points_per_cloud.min().item()))
+        edge_index = knn_graph(
+            positions,
+            k=neighbors,
+            batch=batch,
+            loop=True,
+        )
+        encoded = self.input_mlp(features)
+        encoded = self.local_feature_aggregation(encoded, positions, edge_index)
+        return self.activation(self.output_mlp(encoded) + self.shortcut(features))
 
 
-class RandLANet(torch.nn.Module):
+class SeededRandomSubsampling(nn.Module):
+    """Randomly select centers and max-pool their source neighborhoods."""
+
+    def __init__(self, ratio: int, num_neighbors: int, seed: int) -> None:
+        super().__init__()
+        self.ratio = ratio
+        self.num_neighbors = num_neighbors
+        self.seed = seed
+        self.max_aggregation = MaxAggregation()
+
+    def forward(
+        self,
+        features: Tensor,
+        positions: Tensor,
+        batch: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Subsample every cloud and apply neighborhood max pooling.
+
+        Parameters
+        ----------
+        features
+            Source point features.
+        positions
+            Source XYZ coordinates.
+        batch
+            Source cloud indices.
+
+        Returns
+        -------
+        tuple[Tensor, Tensor, Tensor]
+            Pooled features, selected coordinates, and selected cloud indices.
+        """
+        selected_indices = []
+        for cloud_id in torch.unique(batch, sorted=True):
+            cloud_indices = torch.nonzero(batch == cloud_id, as_tuple=False).flatten()
+            output_count = max(cloud_indices.numel() // self.ratio, 1)
+            generator = torch.Generator(device="cpu").manual_seed(
+                self.seed + int(cloud_id.item())
+            )
+            permutation = torch.randperm(
+                cloud_indices.numel(), generator=generator, device="cpu"
+            )[:output_count].to(cloud_indices.device)
+            selected_indices.append(cloud_indices[permutation])
+
+        selected = torch.cat(selected_indices)
+        sampled_positions = positions[selected]
+        sampled_batch = batch[selected]
+        points_per_cloud = torch.bincount(batch)
+        neighbors = min(self.num_neighbors, int(points_per_cloud.min().item()))
+        center_index, neighbor_index = knn(
+            positions,
+            sampled_positions,
+            k=neighbors,
+            batch_x=batch,
+            batch_y=sampled_batch,
+        )
+        pooled = self.max_aggregation(
+            features[neighbor_index],
+            center_index,
+            dim_size=sampled_positions.size(0),
+        )
+        return pooled, sampled_positions, sampled_batch
+
+
+class RandLANet(nn.Module):
+    """Four-stage SemanticKITTI-configuration encoder for object regression."""
+
+    variant = "randlanet-official-config-4stage-regression"
+    d_out = (16, 64, 128, 256)
+    block_output_channels = (32, 128, 256, 512)
+    subsampling_ratios = (4, 4, 4, 4)
+    num_neighbors = 16
+    sampling_seed = 133
+
     def __init__(
         self,
-        num_features=3,
-        num_classes=1,
-        decimation: int = 4,
-        num_neighboors: int = 16,
-    ):
+        *,
+        num_neighbors: int = num_neighbors,
+        sampling_seed: int = sampling_seed,
+    ) -> None:
         super().__init__()
-        self.decimation = decimation
-        # An option to return logits instead of log probabilities:
-        self.fc0 = Linear(in_features=num_features, out_features=8)
-        # 2 DilatedResidualBlock converges better than 4 on ModelNet.
-        self.block1 = DilatedResidualBlock(num_neighboors, 8, 32)
-        self.block2 = DilatedResidualBlock(num_neighboors, 32, 128)
-        self.mlp1 = SharedMLP([128, 128])
-        self.max_agg = MaxAggregation()
-        self.mlp_classif = SharedMLP([128, 32], dropout=[0.5])
-        self.fc_classif = Linear(32, num_classes)
+        self.num_neighbors = num_neighbors
+        self.sampling_seed = sampling_seed
+        self.initial_mlp = SharedMLP(3, 8)
 
-    def forward(self, data):
-        x = data.x
-        pos = data.pos
-        batch = data.batch
-        ptr = getattr(data, 'ptr', None)
-        if ptr is None:
-            ptr = torch.cat([
-                batch.new_zeros(1),
-                torch.bincount(batch).cumsum(dim=0),
-            ])
+        input_channels = (8, *self.block_output_channels[:-1])
+        self.encoder_blocks = nn.ModuleList(
+            DilatedResidualBlock(d_in, d_out, num_neighbors)
+            for d_in, d_out in zip(input_channels, self.d_out, strict=True)
+        )
+        self.subsamplers = nn.ModuleList(
+            SeededRandomSubsampling(
+                ratio,
+                num_neighbors,
+                sampling_seed + level * 10_000,
+            )
+            for level, ratio in enumerate(self.subsampling_ratios)
+        )
+        self.regression_head = nn.Sequential(
+            SharedMLP(self.block_output_channels[-1], 64),
+            SharedMLP(64, 32),
+            nn.Dropout(p=0.5),
+            nn.Linear(32, 1),
+        )
 
-        x = x if x is not None else pos
-        b1 = self.block1(self.fc0(x), pos, batch)
-        b1_decimated, ptr1 = decimate(b1, ptr, self.decimation)
+    def encode(
+        self,
+        data: Any,
+        *,
+        return_hierarchy: bool = False,
+    ) -> tuple[Any, ...]:
+        """Encode XYZ input through all four randomly sampled levels.
 
-        b2 = self.block2(*b1_decimated)
-        b2_decimated, _ = decimate(b2, ptr1, self.decimation)
+        Parameters
+        ----------
+        data
+            PyG data object containing ``pos`` and optionally ``batch``.
+        return_hierarchy
+            Return intermediate feature/position/batch tensors for tests.
 
-        x = self.mlp1(b2_decimated[0])
-        x = self.max_agg(x, b2_decimated[2])
+        Returns
+        -------
+        tuple
+            Deep features and batch indices, optionally followed by all levels.
+        """
+        positions = data.pos
+        batch = getattr(data, "batch", None)
+        if batch is None:
+            batch = positions.new_zeros(positions.size(0), dtype=torch.long)
+        features = self.initial_mlp(positions)
+        hierarchy = []
 
-        x = self.mlp_classif(x)
+        for block, subsampler in zip(
+            self.encoder_blocks, self.subsamplers, strict=True
+        ):
+            features = block(features, positions, batch)
+            features, positions, batch = subsampler(features, positions, batch)
+            if return_hierarchy:
+                hierarchy.append((features, positions, batch))
 
-        return self.fc_classif(x).squeeze(-1)
+        if return_hierarchy:
+            return features, batch, hierarchy
+        return features, batch
+
+    def forward(self, data: Any) -> Tensor:
+        """Predict one scalar for each point cloud in a PyG batch."""
+        features, batch = self.encode(data)
+        pooled = global_max_pool(features, batch)
+        return self.regression_head(pooled).squeeze(-1)

@@ -100,7 +100,11 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     visualize = False
     model = BENCHMARK_MODEL_REGISTRY[model_name]().to(device)
-    best_model_weights = torch.load(checkpoint_path)
+    best_model_weights = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=True,
+    )
     model.load_state_dict(best_model_weights)
     model.eval()
 
@@ -230,6 +234,10 @@ def main() -> None:
             "mae_g": mae,
             "max_test_files": args.max_test_files,
             "model": model_name,
+            "model_parameters": sum(
+                parameter.numel() for parameter in model.parameters()
+            ),
+            "model_variant": getattr(model, "variant", model_name),
             "point_clouds": point_cloud_count,
             "prediction_sha256": sha256_file(result_path),
             "prediction_std_g": prediction_std,

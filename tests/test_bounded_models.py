@@ -25,7 +25,7 @@ class BoundedModelCompatibilityTest(unittest.TestCase):
             pos=torch.rand(64, 3),
             batch=torch.zeros(64, dtype=torch.long),
         )
-        model = RandLANet(num_neighboors=4).eval()
+        model = RandLANet(num_neighbors=4).eval()
 
         self.assertEqual(tuple(model(data).shape), (1,))
 
