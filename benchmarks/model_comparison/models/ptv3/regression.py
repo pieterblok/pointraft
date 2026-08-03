@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import flash_attn
 import numpy as np
 import spconv
 import torch
@@ -169,6 +170,7 @@ def runtime_versions() -> dict[str, str]:
     return {
         "cuda": str(torch.version.cuda),
         "cudnn": str(torch.backends.cudnn.version()),
+        "flash_attn": flash_attn.__version__,
         "numpy": np.__version__,
         "python": sys.version.split()[0],
         "spconv": spconv.__version__,
@@ -177,13 +179,20 @@ def runtime_versions() -> dict[str, str]:
     }
 
 
-def load_context() -> tuple[Path, Path, dict[str, Any], type[nn.Module]]:
+def load_context(
+    model_variant: str,
+) -> tuple[Path, Path, dict[str, Any], type[nn.Module]]:
     """Prepare pinned PTv3 source and load the export manifest and adapter."""
     project_dir = Path(__file__).resolve().parent
     project_root = project_dir.parents[3]
     upstream_root = prepare_upstream(project_dir)
     sys.path.insert(0, str(upstream_root))
-    from adapter import PTv3Regressor
+    from adapter import OfficialPTv3ThreeStageRegressor, PTv3Regressor
+
+    model_classes = {
+        "compact": PTv3Regressor,
+        "official_3stage": OfficialPTv3ThreeStageRegressor,
+    }
 
     manifest_path = project_dir / ".data" / "manifest.json"
     if not manifest_path.exists():
@@ -195,12 +204,14 @@ def load_context() -> tuple[Path, Path, dict[str, Any], type[nn.Module]]:
         split_path = project_dir / ".data" / f"{split}.npz"
         if sha256_file(split_path) != manifest["splits"][split]["sha256"]:
             raise RuntimeError(f"PTv3 export hash mismatch: {split_path}")
-    return project_dir, project_root, manifest, PTv3Regressor
+    return project_dir, project_root, manifest, model_classes[model_variant]
 
 
 def train(args: argparse.Namespace) -> None:
-    """Train the compact PTv3 adapter under the paper optimizer protocol."""
-    project_dir, project_root, manifest, model_class = load_context()
+    """Train a selected PTv3 adapter under the paper optimizer protocol."""
+    project_dir, project_root, manifest, model_class = load_context(
+        args.model_variant
+    )
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable")
@@ -240,11 +251,15 @@ def train(args: argparse.Namespace) -> None:
     )
 
     model = model_class().to(device)
+    use_amp = bool(getattr(model, "uses_flash_attention", False))
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     criterion = nn.SmoothL1Loss(beta=20)
     optimizer = optim.Adam(
         model.parameters(), lr=args.learning_rate, weight_decay=0.0001
     )
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == "cuda")
     checkpoint_path = project_root / "weights" / f"{args.run_name}.pth"
     if checkpoint_path.exists() and not args.overwrite:
         raise RuntimeError(f"{checkpoint_path} exists; pass --overwrite to replace it")
@@ -278,8 +293,9 @@ def train(args: argparse.Namespace) -> None:
             optimizer.zero_grad()
             predictions = model(coordinates, batch, args.grid_size)
             loss = criterion(predictions, targets)
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             train_losses.append(loss.item())
         if not train_losses:
             raise RuntimeError("No PTv3 training batches were evaluated")
@@ -326,6 +342,19 @@ def train(args: argparse.Namespace) -> None:
             print("Saved best PTv3 model", flush=True)
         scheduler.step()
 
+    peak_allocated_bytes = None
+    peak_reserved_bytes = None
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        peak_allocated_bytes = torch.cuda.max_memory_allocated(device)
+        peak_reserved_bytes = torch.cuda.max_memory_reserved(device)
+        print(
+            "Peak CUDA memory: "
+            f"allocated={peak_allocated_bytes / 1024**2:.1f} MiB, "
+            f"reserved={peak_reserved_bytes / 1024**2:.1f} MiB",
+            flush=True,
+        )
+
     commit, dirty = git_state(project_root)
     write_json(
         provenance_path,
@@ -347,11 +376,15 @@ def train(args: argparse.Namespace) -> None:
             "max_train_batches": args.max_train_batches,
             "max_val_batches": args.max_val_batches,
             "model": "ptv3",
+            "model_selection": args.model_variant,
             "model_parameters": sum(
                 parameter.numel() for parameter in model.parameters()
             ),
             "model_variant": model.variant,
             "optimizer": "Adam",
+            "precision": "fp16-flash-fp32-rest" if use_amp else "float32",
+            "peak_cuda_allocated_bytes": peak_allocated_bytes,
+            "peak_cuda_reserved_bytes": peak_reserved_bytes,
             "scheduler": "ExponentialLR(gamma=0.97)",
             "seed": RANDOM_SEED,
             "splits_sha256": manifest["splits_sha256"],
@@ -369,7 +402,9 @@ def train(args: argparse.Namespace) -> None:
 
 def evaluate(args: argparse.Namespace) -> None:
     """Evaluate a PTv3 checkpoint and write repository-standard artifacts."""
-    project_dir, project_root, manifest, model_class = load_context()
+    project_dir, project_root, manifest, model_class = load_context(
+        args.model_variant
+    )
     device = torch.device(args.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable")
@@ -384,10 +419,20 @@ def evaluate(args: argparse.Namespace) -> None:
         num_workers=0,
     )
     checkpoint_path = project_root / "weights" / f"{args.run_name}.pth"
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(
+        checkpoint_path,
+        map_location=device,
+        weights_only=True,
+    )
+    if checkpoint["variant"] != model_class.variant:
+        raise RuntimeError(
+            "Checkpoint variant does not match requested model: "
+            f"{checkpoint['variant']} != {model_class.variant}"
+        )
     model = model_class().to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+    use_amp = bool(getattr(model, "uses_flash_attention", False))
     grid_size = float(checkpoint["grid_size"])
 
     warmup = collate_clouds([test_dataset[indices[0]]])
@@ -484,8 +529,10 @@ def evaluate(args: argparse.Namespace) -> None:
             "mae_g": mae,
             "max_test_files": args.max_test_files,
             "model": "ptv3",
+            "model_selection": args.model_variant,
             "model_variant": checkpoint["variant"],
             "point_clouds": len(file_names),
+            "precision": "fp16-flash-fp32-rest" if use_amp else "float32",
             "prediction_sha256": sha256_file(result_path),
             "prediction_std_g": prediction_std,
             "r2": r2,
@@ -508,6 +555,11 @@ def main() -> None:
     test_parser = subparsers.add_parser("test")
     for command_parser in (train_parser, test_parser):
         command_parser.add_argument("--run-name", required=True)
+        command_parser.add_argument(
+            "--model-variant",
+            choices=("compact", "official_3stage"),
+            default="compact",
+        )
         command_parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     train_parser.add_argument("--epochs", type=int, default=50)
     train_parser.add_argument("--learning-rate", type=float, default=0.001)

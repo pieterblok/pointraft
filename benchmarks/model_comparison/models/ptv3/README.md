@@ -1,78 +1,138 @@
-# PTv3 Isolated Regression Benchmark
+# PTv3 Regression Benchmarks
 
-This standalone uv project checks whether the official detached Point
-Transformer V3 source can import and execute a reduced CUDA forward pass on the
-current machine. The same environment now contains a compact three-stage PTv3
-scalar-regression adapter and bounded paper-data training/evaluation workers.
+This isolated uv project maintains two PTv3 scalar-regression models for the
+PointRAFT comparison:
 
-The smoke uses the official upstream commit
-`3229e9b7de1770c8ad17c316f8e349982de509f8`, verifies every downloaded source
-file with SHA-256, disables FlashAttention, and terminates after a bounded
-timeout.
+| CLI name | Model identity | Purpose |
+| --- | --- | --- |
+| `ptv3` | `ptv3-compact-3stage` | Strong task-optimized baseline |
+| `ptv3_official_3stage` | `ptv3-official-3stage-flash-regression` | Official-style object-scale sensitivity baseline |
 
-From the PointRAFT repository root, run:
+> **CLI identity:** the unified command uses `--models` (plural).
+> `--models ptv3` always runs the compact model. To run the official-style
+> model, use `--models ptv3_official_3stage`. There is no automatic selection
+> of an "official" model behind the shorter `ptv3` name.
 
-```bash
-uv run --project benchmarks/model_comparison/models/ptv3 --locked \
-  python benchmarks/model_comparison/models/ptv3/smoke.py
+The runner resolves the public names explicitly:
+
+```text
+ptv3                     -> --model-variant compact
+ptv3_official_3stage     -> --model-variant official_3stage
 ```
 
-The first invocation creates
-`benchmarks/model_comparison/models/ptv3/.venv/` and downloads the
-pinned upstream files into the ignored `.upstream/` directory. Neither generated
-directory is committed.
+Both models use the pinned detached PointTransformerV3 source at commit
+`3229e9b7de1770c8ad17c316f8e349982de509f8`, centered XYZ input, 1,024 points,
+a 2 mm grid, three encoder stages, per-cloud mean pooling, and scalar output.
 
-This environment intentionally follows the official PTv3-era CUDA stack rather
-than PointRAFT's Python 3.12 environment:
+The compact model uses fixed Z-order, standard attention with patch size 64,
+no drop path, and a small `128 -> 64 -> 1` head. The official-style model
+retains the four official serialization orders, shuffled orders,
+FlashAttention with patch size 1,024, drop path 0.3, and a
+`128 -> 256 -> 128 -> 1` BN/ReLU/dropout head.
+
+Detailed motivation, stage-depth experiments, failed historical variants,
+metrics, limitations, and artifact hashes are recorded in
+[`EXPERIMENTS.md`](EXPERIMENTS.md).
+
+## Environment
+
+The locked environment follows the PTv3-era CUDA stack:
 
 - Python 3.11
 - PyTorch 2.1.0 with CUDA 11.8
 - spconv-cu118 2.3.6
 - torch-scatter 2.1.2 for PyTorch 2.1/CUDA 11.8
-- FlashAttention disabled
-
-## Verified Smoke
-
-Verified on 2026-08-01 with an NVIDIA GeForce RTX 3090 and driver 610.43.03.
-Both bounded CUDA forwards completed successfully:
-
-```text
-Environment: python=3.11.12, torch=2.1.0+cu118, cuda=11.8,
-spconv=2.3.6, torch_scatter=2.1.2+pt21cu118
-PTv3 smoke passed: input=32, output=(32, 32), device=cuda:0
-PTv3 smoke passed: input=128, output=(128, 32), device=cuda:0
-```
+- FlashAttention 2.5.5
 
 The `uv.lock` SHA-256 is
-`22d4858c357f46ea65a800c949b875a5a0118e9d3d55592df618c90a3d0d4136`.
-## Bounded Paper Regression
+`96083c3accdfbe0fbac35ce71c6231d009b30b8cdd66c3f3e0a5f56a22bdd51e`.
 
-Run a small end-to-end paper-data check from the repository root:
+## Smoke Checks
+
+Run the default official-style three-stage CUDA smoke from the repository root:
+
+```bash
+uv run --project benchmarks/model_comparison/models/ptv3 --locked \
+  python benchmarks/model_comparison/models/ptv3/smoke.py --points 1024
+```
+
+The smoke default is independent of the unified CLI mapping above: omitting
+`--model-variant` in `smoke.py` checks `official_3stage`, while
+`--models ptv3` in the unified benchmark still means compact.
+
+Run the compact smoke explicitly:
+
+```bash
+uv run --project benchmarks/model_comparison/models/ptv3 --locked \
+  python benchmarks/model_comparison/models/ptv3/smoke.py \
+  --model-variant compact --points 1024
+```
+
+## Compact PTv3 (`--models ptv3`)
+
+Bounded engineering check:
 
 ```bash
 uv run python -m benchmarks model-comparison train --models ptv3 \
   --epochs 1 --batch-size 2 --max-train-batches 1 --max-val-batches 1 \
-  --max-export-files-per-split 8
+  --max-export-files-per-split 8 --overwrite
 uv run python -m benchmarks model-comparison test --models ptv3 \
   --max-test-files 8 --max-export-files-per-split 8
 ```
 
-The main Python 3.12 environment centers and farthest-point-samples the paper
-PLY files, then exports non-pickle NumPy arrays under ignored `.data/`. The
-Python 3.11/cu118 environment verifies the export hashes before training or
-testing. Omitting `--max-export-files-per-split` replaces any bounded cache with
-a complete export before a full run, so a prerun cannot be mistaken for the
-complete dataset.
+Complete run:
 
-Bounded training targets the canonical `weights/ptv3.pth`; use it only when no
-accepted checkpoint would be replaced.
+```bash
+uv run python -m benchmarks model-comparison train --models ptv3 \
+  --epochs 50 --batch-size 32 --overwrite
+uv run python -m benchmarks model-comparison test --models ptv3
+```
 
-The adapter is explicitly identified as `ptv3-compact-3stage` in provenance.
-It uses XYZ features, serialized Z order, three encoder stages, global mean
-pooling, and a two-layer scalar head. FlashAttention remains disabled.
+The retained clean result selected epoch 43 and achieved 14.944 g MAE,
+20.746 g RMSE, and R-squared 0.9635 on 5,254 test clouds.
 
-The verified bounded integration run used 64 files per split, batch size 4,
-three epochs, five training batches per epoch, and two validation batches per
-epoch. It completed training, checkpoint loading, and 64-file evaluation. Its
-metrics are engineering evidence only and are not reportable model-quality
-results because the model received only 15 optimizer steps on a bounded export.
+## Official-Style PTv3-S (`--models ptv3_official_3stage`)
+
+Bounded engineering check:
+
+```bash
+uv run python -m benchmarks model-comparison train \
+  --models ptv3_official_3stage --epochs 1 --batch-size 2 \
+  --max-train-batches 1 --max-val-batches 1 \
+  --max-export-files-per-split 8 --overwrite
+uv run python -m benchmarks model-comparison test \
+  --models ptv3_official_3stage --max-test-files 8 \
+  --max-export-files-per-split 8
+```
+
+Complete run:
+
+```bash
+uv run python -m benchmarks model-comparison train \
+  --models ptv3_official_3stage --epochs 50 --batch-size 32 --overwrite
+uv run python -m benchmarks model-comparison test \
+  --models ptv3_official_3stage
+```
+
+The completed diagnostic selected epoch 40 and achieved 20.593 g MAE,
+27.915 g RMSE, and R-squared 0.9340. Its provenance reports
+`code_dirty=true`; reproduce it from committed source before treating it as an
+accepted manuscript artifact.
+
+## Artifact Contract
+
+Each CLI name writes to independent flat paths:
+
+```text
+weights/<model>.pth
+results/model_comparison/predictions/<model>.csv
+results/model_comparison/logs/<model>.*
+results/model_comparison/provenance/<model>.*.json
+```
+
+Consequently, `weights/ptv3.pth` is the compact checkpoint and
+`weights/ptv3_official_3stage.pth` is the official-style checkpoint.
+
+Training refuses to replace an existing checkpoint unless `--overwrite` is
+passed. Bounded exports are verified before use and must not be reported as
+complete model-quality results.

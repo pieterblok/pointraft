@@ -81,6 +81,20 @@ class BenchmarkRunnerTest(unittest.TestCase):
             train_command,
         )
         self.assertIn("train", train_command)
+        self.assertIn("--model-variant", train_command)
+        self.assertIn("compact", train_command)
+
+    def test_builds_three_stage_ptv3_command(self) -> None:
+        """Route the controlled three-stage variant to separate artifacts."""
+        command = build_command(
+            "test",
+            "ptv3_official_3stage",
+            Path("/project"),
+            max_test_files=8,
+        )
+
+        self.assertIn("ptv3_official_3stage", command)
+        self.assertEqual(command[-3:], ["official_3stage", "--max-test-files", "8"])
 
     def test_uses_flat_canonical_artifact_paths(self) -> None:
         """Keep every comparison model on the common artifact contract."""

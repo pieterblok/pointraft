@@ -45,7 +45,7 @@ uv run python -m benchmarks model-comparison test \
 ```
 
 Available names are `pointnet`, `pointnet2`, `dgcnn`, `pointmlp`,
-`pointtransformer`, `randlanet`, and `ptv3`. Each model has one checkpoint at
+`pointtransformer`, `randlanet`, `ptv3`, and `ptv3_official_3stage`. Each model has one checkpoint at
 `weights/<model>.pth`; training refuses to replace it unless `--overwrite` is
 given.
 

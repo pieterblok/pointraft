@@ -89,6 +89,7 @@ def run_worker(
     project_dir: Path,
     device: str,
     points: int,
+    model_variant: str,
     *,
     import_only: bool = False,
 ) -> None:
@@ -102,15 +103,17 @@ def run_worker(
         Torch execution device.
     points
         Number of synthetic input points.
+    model_variant
+        Official encoder depth to exercise.
     import_only
         Stop after importing and reporting dependency versions.
     """
     sys.path.insert(0, str(project_dir / ".upstream"))
 
+    import flash_attn
     import spconv
     import torch
     import torch_scatter
-    from pointtransformerv3.model import PointTransformerV3
 
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
@@ -123,6 +126,7 @@ def run_worker(
         "Environment: "
         f"python={sys.version.split()[0]}, torch={torch.__version__}, "
         f"cuda={torch.version.cuda}, spconv={spconv.__version__}, "
+        f"flash_attn={flash_attn.__version__}, "
         f"torch_scatter={torch_scatter.__version__}",
         flush=True,
     )
@@ -130,25 +134,13 @@ def run_worker(
         print("PTv3 import smoke passed", flush=True)
         return
 
-    model = (
-        PointTransformerV3(
-            in_channels=3,
-            order=("z",),
-            stride=(2,),
-            enc_depths=(1, 1),
-            enc_channels=(16, 32),
-            enc_num_head=(2, 4),
-            enc_patch_size=(16, 16),
-            cls_mode=True,
-            enable_flash=False,
-            upcast_attention=True,
-            upcast_softmax=True,
-            shuffle_orders=False,
-            drop_path=0,
-        )
-        .to(device)
-        .eval()
-    )
+    from adapter import OfficialPTv3ThreeStageRegressor, PTv3Regressor
+
+    model_class = {
+        "compact": PTv3Regressor,
+        "official_3stage": OfficialPTv3ThreeStageRegressor,
+    }[model_variant]
+    model = model_class().to(device).eval()
 
     coordinates = torch.rand(points, 3, device=device) * 0.08
     data = {
@@ -158,15 +150,15 @@ def run_worker(
         "batch": torch.zeros(points, dtype=torch.long, device=device),
     }
     with torch.inference_mode():
-        output = model(data)
+        output = model(data["coord"], data["batch"], data["grid_size"])
     if device == "cuda":
         torch.cuda.synchronize()
 
-    if output.feat.ndim != 2 or output.feat.shape[1] != 32:
-        raise RuntimeError(f"Unexpected PTv3 feature shape: {tuple(output.feat.shape)}")
+    if output.shape != (1,) or not torch.isfinite(output).all():
+        raise RuntimeError(f"Unexpected PTv3 regression output: {output}")
     print(
-        f"PTv3 smoke passed: input={points}, output={tuple(output.feat.shape)}, "
-        f"device={output.feat.device}",
+        f"PTv3 smoke passed: variant={model_variant}, input={points}, "
+        f"output={tuple(output.shape)}, device={output.device}",
         flush=True,
     )
 
@@ -176,6 +168,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     parser.add_argument("--points", type=int, default=128)
+    parser.add_argument(
+        "--model-variant",
+        choices=("compact", "official_3stage"),
+        default="official_3stage",
+    )
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--import-only", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
@@ -193,6 +190,7 @@ def main() -> None:
             project_dir,
             args.device,
             args.points,
+            args.model_variant,
             import_only=args.import_only,
         )
         return
@@ -205,6 +203,8 @@ def main() -> None:
         args.device,
         "--points",
         str(args.points),
+        "--model-variant",
+        args.model_variant,
     ]
     if args.import_only:
         command.append("--import-only")

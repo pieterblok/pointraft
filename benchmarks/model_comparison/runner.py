@@ -8,6 +8,11 @@ from pathlib import Path
 
 from utils.provenance import git_commit, git_source_dirty, write_json
 
+PTV3_MODEL_VARIANTS = {
+    "ptv3": "compact",
+    "ptv3_official_3stage": "official_3stage",
+}
+
 
 def artifact_paths(project_root: Path, model: str) -> dict[str, Path]:
     """Return canonical checkpoint and result paths for a comparison model."""
@@ -90,7 +95,7 @@ def build_command(
     overwrite: bool = False,
 ) -> list[str]:
     """Build a train or test command for one canonical model artifact."""
-    if model == "ptv3":
+    if model in PTV3_MODEL_VARIANTS:
         project_dir = (
             project_root / "benchmarks" / "model_comparison" / "models" / "ptv3"
         )
@@ -105,6 +110,8 @@ def build_command(
             action,
             "--run-name",
             model,
+            "--model-variant",
+            PTV3_MODEL_VARIANTS[model],
         ]
     else:
         command = [
@@ -174,7 +181,7 @@ def run_models(
     project_root = Path(__file__).resolve().parents[2]
     all_succeeded = True
     for model in models:
-        if model == "ptv3":
+        if model in PTV3_MODEL_VARIANTS:
             export_command = build_ptv3_export_command(
                 project_root, max_export_files_per_split
             )
