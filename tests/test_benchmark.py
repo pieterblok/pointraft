@@ -57,7 +57,7 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertEqual(command[-2:], ["--max-test-files", "64"])
 
     def test_builds_isolated_ptv3_commands(self) -> None:
-        """Keep PTv3 preprocessing and execution in their compatible runtimes."""
+        """Route default PTv3 through the official-style isolated model."""
         project_root = Path("/project")
         export_command = build_ptv3_export_command(project_root, 8)
         train_command = build_command(
@@ -82,19 +82,19 @@ class BenchmarkRunnerTest(unittest.TestCase):
         )
         self.assertIn("train", train_command)
         self.assertIn("--model-variant", train_command)
-        self.assertIn("compact", train_command)
+        self.assertIn("official_3stage", train_command)
 
-    def test_builds_three_stage_ptv3_command(self) -> None:
-        """Route the controlled three-stage variant to separate artifacts."""
+    def test_builds_compact_ptv3_command(self) -> None:
+        """Route the task-optimized PTv3 variant to separate artifacts."""
         command = build_command(
             "test",
-            "ptv3_official_3stage",
+            "ptv3_compact",
             Path("/project"),
             max_test_files=8,
         )
 
-        self.assertIn("ptv3_official_3stage", command)
-        self.assertEqual(command[-3:], ["official_3stage", "--max-test-files", "8"])
+        self.assertIn("ptv3_compact", command)
+        self.assertEqual(command[-3:], ["compact", "--max-test-files", "8"])
 
     def test_uses_flat_canonical_artifact_paths(self) -> None:
         """Keep every comparison model on the common artifact contract."""

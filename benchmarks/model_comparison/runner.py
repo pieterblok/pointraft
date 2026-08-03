@@ -9,8 +9,8 @@ from pathlib import Path
 from utils.provenance import git_commit, git_source_dirty, write_json
 
 PTV3_MODEL_VARIANTS = {
-    "ptv3": "compact",
-    "ptv3_official_3stage": "official_3stage",
+    "ptv3": "official_3stage",
+    "ptv3_compact": "compact",
 }
 
 

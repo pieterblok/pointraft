@@ -4,8 +4,8 @@ This report records the PTv3 adaptation and ablation work for the PointRAFT
 model comparison. It preserves the evidence for historical variants that are no
 longer executable from the benchmark CLI. The maintained implementations are:
 
-- `ptv3`: the task-optimized compact three-stage model;
-- `ptv3_official_3stage`: the official-style object-scale three-stage model.
+- `ptv3`: the official-style object-scale three-stage transfer baseline;
+- `ptv3_compact`: the task-optimized compact three-stage model.
 
 The experiments use 1,024-point XYZ tuber clouds, a 2 mm grid, the private
 paper split, Smooth L1 loss, Adam, batch size 32, and seed 133 unless explicitly
@@ -59,7 +59,8 @@ The depth diagnostics support this scale argument:
 | Official 5-stage, Flash off | 50 | 21 | 110.164 | 131.509 | -0.4649 | 65.961 | Full run; failed |
 | Official 5-stage, Flash on | 10 | 2 | 124.372 | 162.145 | -1.2269 | 10.824 | Low-biased collapse |
 | Official 4-stage, Flash on | 10 | 2 | 107.835 | 146.691 | -0.8226 | 0.337 | Constant collapse |
-| Official 3-stage, Flash on | 50 | 40 | 20.593 | 27.915 | 0.9340 | 105.779 | Learned valid mapping |
+| Official 3-stage, Flash on, historical | 50 | 40 | 20.593 | 27.915 | 0.9340 | 105.779 | Learned valid mapping |
+| PTv3-S rerun, canonical default | 50 | 41 | 24.842 | 33.201 | 0.9066 | 95.690 | Valid but weak large-scene transfer |
 
 The unequal budgets mean the table is an engineering ablation, not a formal
 same-budget leaderboard. The controlled 10-epoch validation runs nevertheless
@@ -102,12 +103,12 @@ The complete 50-epoch results were:
 
 | Model | Best epoch | MAE (g) | RMSE (g) | R-squared | Time (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| PTv3 compact | 43 | **14.944** | **20.746** | **0.9635** | **11.960** |
-| PTv3 official-style three-stage | 40 | 20.593 | 27.915 | 0.9340 | 17.376 |
+| PTv3-S, default transfer baseline | 41 | 24.842 | 33.201 | 0.9066 | 13.131 |
+| PTv3-Compact, potato-scale optimization | 43 | **14.944** | **20.746** | **0.9635** | **11.960** |
 
-The compact model reduced MAE by 5.649 g (27.4% relative to the official-style
-result) and RMSE by 7.169 g (25.7%). This is a combined adaptation effect; the
-current evidence does not attribute the gain to one setting in isolation.
+The compact model reduced MAE by 9.898 g (39.8% relative to PTv3-S) and RMSE by
+12.454 g (37.5%). This is a combined scenario-adaptation effect; the current
+evidence does not attribute the gain to one setting in isolation.
 Head-only, patch-only, drop-path, order-shuffle, and precision ablations would
 be required for a causal decomposition.
 
@@ -123,8 +124,13 @@ therefore insufficient while the deeper hierarchy remained jointly optimized.
 
 - The accepted compact result was produced from clean commit
   `37f5839966cff2852a54b79f4a56ccc9ec47c8cc`.
-- The official-style three-stage result was a complete 50-epoch run but reports
-  `code_dirty=true` at commit `133379ec7681167582c37c083313d8f593202c5b`.
+- The canonical PTv3-S result completed 50 epochs from benchmark source commit
+  `dc3199004a4aea2b485c7aaba9293dfd741f63e6`. Its final provenance reports
+  `code_dirty=true` because unrelated `tools/` files changed during training;
+  the benchmark implementation and tests remained identical to that commit.
+- An earlier official-style three-stage run achieved 20.593 g MAE but also
+  reports `code_dirty=true` at commit
+  `133379ec7681167582c37c083313d8f593202c5b`.
 - The split SHA-256 is
   `bf2471121a816829e33fa207225cb5c419996b0b6dd19da3bb835c3d4602d9c1`.
 - The ground-truth SHA-256 is
@@ -136,10 +142,12 @@ Primary artifact hashes:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| Compact checkpoint | `a4c34c75cbed4dec7c05fe84f49deee9018e1182691f7aa71a39300d249ee8ce` |
-| Compact predictions | `8206b6eef92b771a8f78f25143a6ef9d6c1647365a1a0191bbc4b9fbda799c24` |
-| Official-style 3-stage checkpoint | `d56a0fad94067f111c1eec5a5b3cdbc7b715f847df2ad79e4ff682828b604148` |
-| Official-style 3-stage predictions | `44cba8e168670cdc05557cf49f4029973b181eb1cad8cea124a3841357693c6e` |
+| Canonical PTv3-S checkpoint | `adae094b127414169c3894a43b10e97d4be46421516476b24e944bcc22d089a4` |
+| Canonical PTv3-S predictions | `fb879fb1145bd2928884c369bdedb101a3d5f318c9ca155353b50e56f7d86a61` |
+| PTv3-Compact checkpoint | `a4c34c75cbed4dec7c05fe84f49deee9018e1182691f7aa71a39300d249ee8ce` |
+| PTv3-Compact predictions | `8206b6eef92b771a8f78f25143a6ef9d6c1647365a1a0191bbc4b9fbda799c24` |
+| Historical official-style 3-stage checkpoint | `d56a0fad94067f111c1eec5a5b3cdbc7b715f847df2ad79e4ff682828b604148` |
+| Historical official-style 3-stage predictions | `44cba8e168670cdc05557cf49f4029973b181eb1cad8cea124a3841357693c6e` |
 | Official 5-stage Flash-off checkpoint | `187e8b68ebd7105be9d4072a96de615e68e68edcb8dfa0949b56883fc0fef886` |
 | Official 5-stage Flash-on checkpoint | `7dc367aad6131deb2cd10fb0e7cb3dd9249bb078d27d7582736007e8cf4c8d7a` |
 | Official 4-stage checkpoint | `d87ec43772194e84a0e04a90cb87bf2de39b52b8b8134155b27507d6d6dbc3de` |
@@ -151,8 +159,11 @@ entries does not delete those records.
 
 ## Recommended Manuscript Presentation
 
-- Report `PTv3-Compact` as the stronger task-optimized baseline.
-- Report `PTv3-S` as the official-style object-scale sensitivity result.
+- Report `PTv3-S` (`ptv3`) as the default transfer baseline. Its weak result
+  demonstrates that large-scene PTv3 settings do not transfer directly to
+  small isolated tubers.
+- Report `PTv3-Compact` (`ptv3_compact`) as a subsequent scenario optimization,
+  preferably in the discussion rather than as the default PTv3 row.
 - Describe XYZ input, 2 mm grid, encoder-only operation, scalar pooling/head,
   and from-scratch shared training as task-required adaptations.
 - Describe three stages as a validation-motivated scale adaptation.

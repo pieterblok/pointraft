@@ -5,19 +5,18 @@ PointRAFT comparison:
 
 | CLI name | Model identity | Purpose |
 | --- | --- | --- |
-| `ptv3` | `ptv3-compact-3stage` | Strong task-optimized baseline |
-| `ptv3_official_3stage` | `ptv3-official-3stage-flash-regression` | Official-style object-scale sensitivity baseline |
+| `ptv3` | `ptv3-official-3stage-flash-regression` | Default architecture-faithful transfer baseline |
+| `ptv3_compact` | `ptv3-compact-3stage` | Potato-scale optimized follow-up model |
 
 > **CLI identity:** the unified command uses `--models` (plural).
-> `--models ptv3` always runs the compact model. To run the official-style
-> model, use `--models ptv3_official_3stage`. There is no automatic selection
-> of an "official" model behind the shorter `ptv3` name.
+> `--models ptv3` always runs PTv3-S. To run the task-optimized model, use
+> `--models ptv3_compact`.
 
 The runner resolves the public names explicitly:
 
 ```text
-ptv3                     -> --model-variant compact
-ptv3_official_3stage     -> --model-variant official_3stage
+ptv3                     -> --model-variant official_3stage
+ptv3_compact             -> --model-variant compact
 ```
 
 Both models use the pinned detached PointTransformerV3 source at commit
@@ -56,9 +55,9 @@ uv run --project benchmarks/model_comparison/models/ptv3 --locked \
   python benchmarks/model_comparison/models/ptv3/smoke.py --points 1024
 ```
 
-The smoke default is independent of the unified CLI mapping above: omitting
-`--model-variant` in `smoke.py` checks `official_3stage`, while
-`--models ptv3` in the unified benchmark still means compact.
+The smoke default matches the unified CLI mapping: omitting `--model-variant`
+in `smoke.py` checks `official_3stage`, and `--models ptv3` also means
+`official_3stage`.
 
 Run the compact smoke explicitly:
 
@@ -68,7 +67,7 @@ uv run --project benchmarks/model_comparison/models/ptv3 --locked \
   --model-variant compact --points 1024
 ```
 
-## Compact PTv3 (`--models ptv3`)
+## Default PTv3-S (`--models ptv3`)
 
 Bounded engineering check:
 
@@ -88,20 +87,27 @@ uv run python -m benchmarks model-comparison train --models ptv3 \
 uv run python -m benchmarks model-comparison test --models ptv3
 ```
 
-The retained clean result selected epoch 43 and achieved 14.944 g MAE,
-20.746 g RMSE, and R-squared 0.9635 on 5,254 test clouds.
+The 50-epoch rerun selected epoch 41 and achieved 24.842 g MAE, 33.201 g RMSE,
+and R-squared 0.9066 on 5,254 test clouds. This intentionally remains the
+default PTv3 result: it measures how the large-scene architecture transfers to
+small isolated tubers before scenario-specific simplification.
 
-## Official-Style PTv3-S (`--models ptv3_official_3stage`)
+The run started with benchmark source commit `dc31990` clean. Its final
+repository-wide provenance reports `code_dirty=true` because unrelated
+`tools/` files changed during training; `benchmarks/model_comparison/` and the
+related tests remained identical to the recorded commit.
+
+## PTv3-Compact (`--models ptv3_compact`)
 
 Bounded engineering check:
 
 ```bash
 uv run python -m benchmarks model-comparison train \
-  --models ptv3_official_3stage --epochs 1 --batch-size 2 \
+  --models ptv3_compact --epochs 1 --batch-size 2 \
   --max-train-batches 1 --max-val-batches 1 \
   --max-export-files-per-split 8 --overwrite
 uv run python -m benchmarks model-comparison test \
-  --models ptv3_official_3stage --max-test-files 8 \
+  --models ptv3_compact --max-test-files 8 \
   --max-export-files-per-split 8
 ```
 
@@ -109,15 +115,14 @@ Complete run:
 
 ```bash
 uv run python -m benchmarks model-comparison train \
-  --models ptv3_official_3stage --epochs 50 --batch-size 32 --overwrite
+  --models ptv3_compact --epochs 50 --batch-size 32 --overwrite
 uv run python -m benchmarks model-comparison test \
-  --models ptv3_official_3stage
+  --models ptv3_compact
 ```
 
-The completed diagnostic selected epoch 40 and achieved 20.593 g MAE,
-27.915 g RMSE, and R-squared 0.9340. Its provenance reports
-`code_dirty=true`; reproduce it from committed source before treating it as an
-accepted manuscript artifact.
+The retained clean compact result selected epoch 43 and achieved 14.944 g MAE,
+20.746 g RMSE, and R-squared 0.9635. It is reported as a potato-scale
+optimization rather than the default PTv3 transfer baseline.
 
 ## Artifact Contract
 
@@ -130,8 +135,12 @@ results/model_comparison/logs/<model>.*
 results/model_comparison/provenance/<model>.*.json
 ```
 
-Consequently, `weights/ptv3.pth` is the compact checkpoint and
-`weights/ptv3_official_3stage.pth` is the official-style checkpoint.
+Consequently, `weights/ptv3.pth` is the PTv3-S checkpoint and
+`weights/ptv3_compact.pth` is the task-optimized checkpoint.
+
+Both canonical paths were promoted from retained runs. Their provenance JSON
+keeps the original run name and command. The promotion record is
+`results/model_comparison/provenance/ptv3.artifact_map.json`.
 
 Training refuses to replace an existing checkpoint unless `--overwrite` is
 passed. Bounded exports are verified before use and must not be reported as
