@@ -18,7 +18,7 @@ Repository: /home/crest/pointraft-paper-full
 
 The system Python is used only as the base interpreter. All Python packages,
 native extensions, downloaded headers, and private libraries remain under
-`benchmarks/deployment/`.
+`benchmarks/deployment/jetson/`.
 
 ## Connect
 
@@ -26,7 +26,7 @@ From another machine:
 
 ```bash
 ssh crest@192.168.250.45
-cd /home/crest/pointraft-paper-full/benchmarks/deployment
+cd /home/crest/pointraft-paper-full/benchmarks/deployment/jetson
 ```
 
 Run every remaining command from this directory. Relative paths in
@@ -144,7 +144,7 @@ Confirm package loading and inspect the repository's canonical checkpoint:
 ${HOME}/.local/bin/uv run --frozen --no-sync --env-file .env.jetson \
     python -c 'import open3d, torch, torch_cluster, torch_fpsample; print(open3d.__version__, torch.__version__, torch.cuda.is_available())'
 
-sha256sum ../../weights/pointraft.pth
+sha256sum ../../../weights/pointraft.pth
 ```
 
 Run the shared deployment check:
@@ -156,8 +156,16 @@ ${HOME}/.local/bin/uv run --frozen --no-sync --env-file .env.jetson \
 
 The pipeline records the actual checkpoint SHA-256 in each run's `system.json`.
 For formal 10 W, 15 W, and 25 W benchmark commands, see the deployment section
-in [`../README.md`](../README.md). Power-mode switching is a separate manual
+in [`../../README.md`](../../README.md). Power-mode switching is a separate manual
 system operation and is not performed by these installation commands.
+
+## Existing Installations
+
+Installations created before the Jetson project moved into this directory keep
+their generated `.venv`, `.runtime`, and `.build` directories one level above.
+Do not move the old virtual environment because its scripts contain absolute
+paths. Keep it as rollback evidence while repeating this guide here, then remove
+the old generated directories only after the new smoke test succeeds.
 
 ## Rebuild
 

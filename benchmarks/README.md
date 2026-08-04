@@ -95,13 +95,22 @@ uv run python -m benchmarks deployment run --device cuda
 uv run python -m benchmarks deployment run --device cpu
 ```
 
+NVIDIA Pascal GPUs such as the GTX 1080 must use the isolated CUDA 12.6
+environment documented in [`deployment/pascal/`](deployment/pascal/):
+
+```bash
+uv run --project benchmarks/deployment/pascal --frozen --no-sync \
+  python -m benchmarks deployment run --device cuda
+```
+
 Every run reads `weights/pointraft.pth`, computes its actual SHA-256, and records
 that digest in `system.json`. No repository-global checkpoint hash is enforced.
 Timestamped artifacts are written under `results/deployment/`.
 
-The Jetson uses the isolated Python 3.8/JetPack environment in `deployment/`.
-See [`deployment/AGENTS.md`](deployment/AGENTS.md) for the no-sudo installation
-and power-mode procedure.
+The Jetson uses the isolated Python 3.8/JetPack environment in
+`deployment/jetson/`. See
+[`deployment/jetson/AGENTS.md`](deployment/jetson/AGENTS.md) for the no-sudo
+installation and power-mode procedure.
 
 ## Third-Party Code
 

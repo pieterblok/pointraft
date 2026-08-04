@@ -73,13 +73,11 @@ class BenchmarkRunnerTest(unittest.TestCase):
         self.assertEqual(export_command[0], sys.executable)
         self.assertEqual(export_command[-2:], ["--max-files-per-split", "8"])
         self.assertEqual(train_command[:2], ["uv", "run"])
-        self.assertIn(
-            "/project/benchmarks/model_comparison/models/ptv3", train_command
+        project_dir = (
+            project_root / "benchmarks" / "model_comparison" / "models" / "ptv3"
         )
-        self.assertIn(
-            "/project/benchmarks/model_comparison/models/ptv3/regression.py",
-            train_command,
-        )
+        self.assertIn(str(project_dir), train_command)
+        self.assertIn(str(project_dir / "regression.py"), train_command)
         self.assertIn("train", train_command)
         self.assertIn("--model-variant", train_command)
         self.assertIn("official_3stage", train_command)

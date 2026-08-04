@@ -1,0 +1,46 @@
+[project]
+name = "pointraft-pascal-inference"
+version = "0.1.0"
+description = "PointRAFT inference environment for x86 NVIDIA Pascal GPUs"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy==2.2.6",
+    "open3d==0.19.0",
+    "opencv-python==4.12.0.88",
+    "pandas==2.3.3",
+    "psutil==7.2.2",
+    "torch==2.8.0",
+    "torch-cluster==1.6.3+pt28cu126",
+    "torch-fpsample",
+    "torch-geometric==2.7.0",
+]
+
+[tool.uv]
+package = false
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torch-cluster = { index = "pyg-cu126" }
+torch-fpsample = { git = "https://github.com/leonardodalinky/pytorch_fpsample.git", rev = "be93a0859d196d0d2d0562bfc5e44e24b01a98de" }
+
+[tool.uv.extra-build-dependencies]
+torch-fpsample = [{ requirement = "torch", match-runtime = true }]
+
+[[tool.uv.dependency-metadata]]
+name = "torch-fpsample"
+version = "0.1.0"
+requires-dist = ["torch>=2.0"]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cu126"
+url = "https://data.pyg.org/whl/torch-2.8.0+cu126.html"
+format = "flat"
+explicit = true

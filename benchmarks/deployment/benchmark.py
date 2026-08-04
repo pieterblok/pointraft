@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import cv2
 import numpy as np
 import open3d as o3d
+import psutil
 import torch
 import torch_geometric
 
@@ -358,6 +359,17 @@ def summarize_metric(values: Sequence[float]) -> Dict[str, float]:
     }
 
 
+def total_memory_bytes() -> int:
+    """Return the host's total physical memory in bytes.
+
+    Returns
+    -------
+    int
+        Total installed physical memory reported by the operating system.
+    """
+    return int(psutil.virtual_memory().total)
+
+
 def collect_system_metadata(
     pipeline: InferencePipeline,
     description: str,
@@ -386,7 +398,7 @@ def collect_system_metadata(
         Hardware, software, source, dataset, and invocation metadata.
     """
     uv_binary = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
-    memory_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    memory_bytes = total_memory_bytes()
     cuda_device = (
         torch.cuda.get_device_name(pipeline.device)
         if pipeline.device.type == "cuda"
