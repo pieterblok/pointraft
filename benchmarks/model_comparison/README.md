@@ -4,6 +4,38 @@ These implementations are isolated from the PointRAFT model under root
 `models/`. They share PointRAFT's dataset split, preprocessing conventions,
 training budget, flat checkpoint contract, and result schema.
 
+## Running
+
+From the repository root, the runner trains and tests the six models of the
+paper's comparison table by default: PointNet, PointNet++, DGCNN, PointMLP,
+RandLA-Net, and PTv3-Compact. Point Transformer (`pointtransformer`) and the
+official-style PTv3 (`ptv3`) run only when selected explicitly with `--models`.
+PointRAFT itself uses the root `train.py` and `test.py`.
+
+```bash
+uv run python -m benchmarks model-comparison train
+uv run python -m benchmarks model-comparison test
+```
+
+Training creates one checkpoint per model, for example `weights/pointnet.pth`
+and `weights/ptv3_compact.pth`, and refuses to replace an existing checkpoint
+unless `--overwrite` is given. Testing writes per-point-cloud predictions to
+`results/model_comparison/predictions/`. To run one model or replace existing
+weights:
+
+```bash
+uv run python -m benchmarks model-comparison train --models pointnet
+uv run python -m benchmarks model-comparison test --models pointnet
+uv run python -m benchmarks model-comparison train --overwrite
+```
+
+The runner accepts bounded experiment controls such as `--epochs`,
+`--learning-rate` (default `0.0005`), `--batch-size`, `--max-train-batches`,
+`--max-val-batches`, `--max-test-files`, `--dry-run`, and
+`--continue-on-error`. It streams output while retaining runner logs and
+explicit failure evidence under `results/model_comparison/logs/` and
+`results/model_comparison/provenance/`.
+
 ## Adapted Implementations
 
 | Model | Upstream | Local adaptation | License |

@@ -9,6 +9,11 @@ PointRAFT entry points.
 ```text
 benchmarks/
 ├── cli.py
+├── ablation_study/
+│   ├── runner.py
+│   ├── train.py
+│   ├── test.py
+│   └── ablations/
 ├── model_comparison/
 │   ├── runner.py
 │   ├── train.py
@@ -28,7 +33,9 @@ for both, but datasets, checkpoints, and results remain repository-local.
 
 ## Model Comparison
 
-PointNet and PointNet++ are selected by default:
+Training and testing select the six models reported in the paper's comparison
+table by default: PointNet, PointNet++, DGCNN, PointMLP, RandLA-Net, and
+PTv3-Compact:
 
 ```bash
 uv run python -m benchmarks model-comparison train
@@ -63,6 +70,19 @@ in the locked project under `models/ptv3/`. See
 [`model_comparison/models/ptv3/README.md`](model_comparison/models/ptv3/README.md)
 for direct debugging commands.
 
+## Ablation Study
+
+Eleven ablations retrain PointRAFT and change one component of its default
+configuration:
+
+```bash
+uv run python -m benchmarks ablation_study train
+uv run python -m benchmarks ablation_study test
+```
+
+See [`ablation_study/README.md`](ablation_study/README.md) for the ablations,
+the run order, cached-data handling, and the results layout.
+
 ## Dry Runs
 
 Dry runs print commands and artifact destinations without exporting data,
@@ -73,6 +93,7 @@ uv run python -m benchmarks model-comparison train \
   --models pointnet pointmlp ptv3 --dry-run
 uv run python -m benchmarks model-comparison test \
   --models pointnet pointmlp ptv3 --dry-run
+uv run python -m benchmarks ablation_study train --dry-run
 uv run python -m benchmarks deployment run --dry-run
 ```
 
@@ -84,9 +105,11 @@ an accepted checkpoint exists.
 
 ## Deployment
 
-The deployment workflow measures RGB-D point-cloud creation, DBSCAN filtering,
-PointRAFT preprocessing, regression, total latency, and throughput. Instance
-segmentation and one-time model loading are excluded from per-sample timing.
+The deployment workflow measures RGB-D image loading, point-cloud creation,
+DBSCAN filtering, PointRAFT preprocessing, network inference, total latency, and
+throughput. Image loading is timed separately because a streaming camera on a
+harvester replaces it. Instance segmentation and one-time model loading are
+excluded from per-sample timing.
 
 ```bash
 uv run python -m benchmarks deployment smoke --device cuda

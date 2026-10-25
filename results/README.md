@@ -17,6 +17,14 @@ results/
 │   ├── logs/
 │   ├── provenance/
 │   └── summary.md
+├── ablation_study/
+│   ├── summary.csv
+│   └── <ablation>/
+│       ├── train_metrics.csv
+│       ├── train.provenance.json
+│       ├── predictions.csv
+│       ├── test_metrics.txt
+│       └── test.provenance.json
 └── deployment/
     ├── summary.md
     └── <platform>_<timestamp>/
