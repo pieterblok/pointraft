@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore")
 import torch
 import torch_geometric.transforms as T
 from torch import nn, optim
-from torch_geometric.loader import DataLoader, ImbalancedSampler
+from torch_geometric.loader import DataLoader
 from torch_geometric.typing import WITH_TORCH_CLUSTER
 
 from data import PointCloudDataset
@@ -61,8 +61,8 @@ def main() -> None:
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=0.001,
-        help="Adam learning rate (default: 0.001).",
+        default=0.0005,
+        help="Adam learning rate (default: 0.0005).",
     )
     parser.add_argument(
         "--batch-size",
@@ -172,12 +172,10 @@ def main() -> None:
     )
 
     ## Dataloaders
-    train_sampler = ImbalancedSampler(train_dataset.cls)
-    train_sampler.generator = make_generator(RANDOM_SEED)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        sampler=train_sampler,
+        shuffle=True,
         num_workers=6,
         worker_init_fn=seed_worker,
         generator=make_generator(RANDOM_SEED + 1),
@@ -335,6 +333,7 @@ def main() -> None:
             ),
             "model_variant": getattr(model, "variant", model_name),
             "optimizer": "Adam",
+            "train_sampler": "shuffle",
             "peak_cuda_allocated_bytes": peak_allocated_bytes,
             "peak_cuda_reserved_bytes": peak_reserved_bytes,
             "scheduler": "ExponentialLR(gamma=0.97)",

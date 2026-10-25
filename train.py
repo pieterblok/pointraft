@@ -14,7 +14,7 @@ from pathlib import Path
 import torch
 import torch_geometric.transforms as T
 from torch import nn, optim
-from torch_geometric.loader import DataLoader, ImbalancedSampler
+from torch_geometric.loader import DataLoader
 from torch_geometric.typing import WITH_TORCH_CLUSTER
 
 from data import PointCloudDataset
@@ -59,8 +59,8 @@ def main() -> None:
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=0.001,
-        help="Adam learning rate (default: 0.001).",
+        default=0.0005,
+        help="Adam learning rate (default: 0.0005).",
     )
     parser.add_argument(
         "--batch-size",
@@ -169,12 +169,10 @@ def main() -> None:
     )
 
     ## Dataloaders
-    train_sampler = ImbalancedSampler(train_dataset.cls)
-    train_sampler.generator = make_generator(RANDOM_SEED)
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        sampler=train_sampler,
+        shuffle=True,
         num_workers=6,
         worker_init_fn=seed_worker,
         generator=make_generator(RANDOM_SEED + 1),
@@ -309,6 +307,7 @@ def main() -> None:
             "max_val_batches": args.max_val_batches,
             "model": model_name,
             "optimizer": "Adam",
+            "train_sampler": "shuffle",
             "scheduler": "ExponentialLR(gamma=0.97)",
             "seed": RANDOM_SEED,
             "splits_sha256": sha256_file(Path(splits_csv)),

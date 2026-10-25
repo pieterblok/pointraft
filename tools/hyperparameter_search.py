@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch_geometric.transforms as T
 from sklearn.metrics import root_mean_squared_error
-from torch_geometric.loader import DataLoader, ImbalancedSampler
+from torch_geometric.loader import DataLoader
 from torch_geometric.typing import WITH_TORCH_CLUSTER
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -31,9 +31,9 @@ if not WITH_TORCH_CLUSTER:
 
 
 def objective(trial):
-    torch.manual_seed(133)
-    random.seed(133)
-    np.random.seed(133)
+    torch.manual_seed(42)
+    random.seed(42)
+    np.random.seed(42)
 
 
     ## File paths
@@ -85,8 +85,7 @@ def objective(trial):
 
 
     ## Prepare dataloaders
-    train_sampler = ImbalancedSampler(train_dataset.cls)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, num_workers=6)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=6)
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=1)
     
 

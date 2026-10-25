@@ -267,7 +267,7 @@ class RandLANet(nn.Module):
     block_output_channels = (32, 128, 256, 512)
     subsampling_ratios = (4, 4, 4, 4)
     num_neighbors = 16
-    sampling_seed = 133
+    sampling_seed = 42
 
     def __init__(
         self,

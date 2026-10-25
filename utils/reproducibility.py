@@ -6,7 +6,7 @@ import torch
 
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
-RANDOM_SEED = 133
+RANDOM_SEED = 42
 
 
 def seed_everything(seed: int = RANDOM_SEED) -> None:

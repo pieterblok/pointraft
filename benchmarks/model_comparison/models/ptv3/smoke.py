@@ -118,9 +118,9 @@ def run_worker(
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available")
 
-    torch.manual_seed(133)
+    torch.manual_seed(42)
     if device == "cuda":
-        torch.cuda.manual_seed_all(133)
+        torch.cuda.manual_seed_all(42)
 
     print(
         "Environment: "

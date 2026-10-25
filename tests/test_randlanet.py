@@ -17,7 +17,7 @@ class RandLANetTest(unittest.TestCase):
     @staticmethod
     def make_data(clouds: int, points: int) -> Data:
         """Create a deterministic concatenated synthetic point-cloud batch."""
-        generator = torch.Generator().manual_seed(133)
+        generator = torch.Generator().manual_seed(42)
         return Data(
             pos=torch.rand(clouds * points, 3, generator=generator),
             batch=torch.arange(clouds).repeat_interleave(points),

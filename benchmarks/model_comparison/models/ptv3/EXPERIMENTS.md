@@ -8,7 +8,7 @@ longer executable from the benchmark CLI. The maintained implementations are:
 - `ptv3_compact`: the task-optimized compact three-stage model.
 
 The experiments use 1,024-point XYZ tuber clouds, a 2 mm grid, the private
-paper split, Smooth L1 loss, Adam, batch size 32, and seed 133 unless explicitly
+paper split, Smooth L1 loss, Adam, batch size 32, and seed 42 unless explicitly
 noted otherwise.
 
 ## Why the Official Defaults Require Adaptation

@@ -19,9 +19,9 @@ import torch
 import torch_scatter
 from smoke import prepare_upstream
 from torch import nn, optim
-from torch.utils.data import DataLoader, Dataset, Subset, WeightedRandomSampler
+from torch.utils.data import DataLoader, Dataset, Subset
 
-RANDOM_SEED = 133
+RANDOM_SEED = 42
 GRID_SIZE = 0.002
 
 
@@ -219,19 +219,11 @@ def train(args: argparse.Namespace) -> None:
     train_dataset = ExportedDataset(data_dir / "train.npz", apply_augmentation=True)
     val_dataset = ExportedDataset(data_dir / "val.npz")
 
-    class_counts = np.bincount(train_dataset.classes)
-    sample_weights = 1.0 / class_counts[train_dataset.classes]
-    sampler_generator = torch.Generator().manual_seed(RANDOM_SEED)
-    sampler = WeightedRandomSampler(
-        torch.as_tensor(sample_weights, dtype=torch.double),
-        num_samples=len(train_dataset),
-        replacement=True,
-        generator=sampler_generator,
-    )
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
-        sampler=sampler,
+        shuffle=True,
+        generator=torch.Generator().manual_seed(RANDOM_SEED),
         collate_fn=collate_clouds,
         num_workers=0,
     )
@@ -382,6 +374,7 @@ def train(args: argparse.Namespace) -> None:
             ),
             "model_variant": model.variant,
             "optimizer": "Adam",
+            "train_sampler": "shuffle",
             "precision": "fp16-flash-fp32-rest" if use_amp else "float32",
             "peak_cuda_allocated_bytes": peak_allocated_bytes,
             "peak_cuda_reserved_bytes": peak_reserved_bytes,
@@ -562,7 +555,7 @@ def main() -> None:
         )
         command_parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     train_parser.add_argument("--epochs", type=int, default=50)
-    train_parser.add_argument("--learning-rate", type=float, default=0.001)
+    train_parser.add_argument("--learning-rate", type=float, default=0.0005)
     train_parser.add_argument("--batch-size", type=int, default=32)
     train_parser.add_argument("--grid-size", type=float, default=GRID_SIZE)
     train_parser.add_argument("--max-train-batches", type=int)
