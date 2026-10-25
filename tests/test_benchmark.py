@@ -18,9 +18,14 @@ from benchmarks.model_comparison.runner import (
 class BenchmarkRunnerTest(unittest.TestCase):
     """Validate unified benchmark commands, logging, and failure evidence."""
 
-    def test_public_models_remain_the_default(self) -> None:
-        """Keep the no-argument public benchmark limited to verified baselines."""
-        self.assertEqual(DEFAULT_BENCHMARK_MODELS, ("pointnet", "pointnet2"))
+    def test_paper_models_are_the_default(self) -> None:
+        """Run every model in the paper's comparison table without arguments."""
+        self.assertEqual(
+            DEFAULT_BENCHMARK_MODELS,
+            ("pointnet", "pointnet2", "dgcnn", "pointmlp", "randlanet", "ptv3_compact"),
+        )
+        self.assertEqual(len(BENCHMARK_MODELS), len(set(BENCHMARK_MODELS)))
+        self.assertTrue(set(DEFAULT_BENCHMARK_MODELS) <= set(BENCHMARK_MODELS))
 
     def test_builds_bounded_paper_training_command(self) -> None:
         """Forward paper-model training controls through the shared runner."""

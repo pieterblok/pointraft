@@ -1,23 +1,23 @@
 """Model-comparison training, evaluation, and orchestration."""
 
-DEFAULT_BENCHMARK_MODELS = ("pointnet", "pointnet2")
-PAPER_BENCHMARK_MODELS = (
+# Models reported in the paper's comparison table; the default for train and test.
+DEFAULT_BENCHMARK_MODELS = (
+    "pointnet",
+    "pointnet2",
     "dgcnn",
     "pointmlp",
-    "pointtransformer",
     "randlanet",
-)
-ISOLATED_BENCHMARK_MODELS = (
-    "ptv3",
     "ptv3_compact",
 )
-BENCHMARK_MODELS = (
-    DEFAULT_BENCHMARK_MODELS + PAPER_BENCHMARK_MODELS + ISOLATED_BENCHMARK_MODELS
+# Further comparison models that run only when selected with --models.
+EXTRA_BENCHMARK_MODELS = (
+    "pointtransformer",
+    "ptv3",
 )
+BENCHMARK_MODELS = DEFAULT_BENCHMARK_MODELS + EXTRA_BENCHMARK_MODELS
 
 __all__ = [
     "BENCHMARK_MODELS",
     "DEFAULT_BENCHMARK_MODELS",
-    "ISOLATED_BENCHMARK_MODELS",
-    "PAPER_BENCHMARK_MODELS",
+    "EXTRA_BENCHMARK_MODELS",
 ]
