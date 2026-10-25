@@ -1,0 +1,67 @@
+[project]
+name = "pointraft"
+version = "0.1.0"
+description = "Regression of 3D shape properties from partial point clouds"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "open3d==0.19.0",
+    "opencv-python==4.12.0.88",
+    "optuna==4.6.0",
+    "psutil==7.2.2",
+    "torch==2.8.0",
+    "torch-cluster==1.6.3+pt28cu128",
+    "torch-fpsample",
+    "torch-geometric==2.7.0",
+    "torchvision==0.23.0",
+]
+
+[dependency-groups]
+build = ["wheel==0.45.1"]
+dev = ["pytest==9.1.1", "ruff==0.16.1"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+exclude = [
+    "benchmarks/**/.upstream",
+    "benchmarks/**/.venv",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = ["E402", "E722", "F403", "F405"]
+
+[tool.uv]
+package = false
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torch-cluster = { index = "pyg-cu128" }
+torch-fpsample = { git = "https://github.com/leonardodalinky/pytorch_fpsample.git", rev = "be93a0859d196d0d2d0562bfc5e44e24b01a98de" }
+torchvision = { index = "pytorch-cu128" }
+
+[tool.uv.extra-build-dependencies]
+torch-fpsample = [{ requirement = "torch", match-runtime = true }]
+
+[[tool.uv.dependency-metadata]]
+name = "torch-fpsample"
+version = "0.1.0"
+requires-dist = ["torch>=2.0"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cu128"
+url = "https://data.pyg.org/whl/torch-2.8.0+cu128.html"
+format = "flat"
+explicit = true

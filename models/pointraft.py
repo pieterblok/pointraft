@@ -12,7 +12,7 @@ class SAModule(torch.nn.Module):
         self.conv = PointNetConv(nn, add_self_loops=False)
 
     def forward(self, x, pos, batch):
-        idx = fps(pos, batch, ratio=self.ratio)
+        idx = fps(pos, batch, ratio=self.ratio, random_start=False)
         row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
         edge_index = torch.stack([col, row], dim=0)
@@ -36,14 +36,14 @@ class GlobalSAModule(torch.nn.Module):
 
 
 class PointRAFT(torch.nn.Module):
-    def __init__(self, height_emb_dim=32):
+    def __init__(self, height_emb_dim=8):
         super().__init__()
         self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]))
         self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.height_embed = MLP([1, height_emb_dim, height_emb_dim])
-        self.regression_head = MLP([1024 + height_emb_dim, 512, 256, 1], dropout=0.5, norm=None)
+        self.regression_head = MLP([1024 + height_emb_dim, 512, 256, 1], dropout_rate=0.5, norm=None)
 
     def forward(self, data):
         sa0_out = (data.x, data.pos, data.batch)

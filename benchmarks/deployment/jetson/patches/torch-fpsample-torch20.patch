@@ -1,0 +1,27 @@
+diff --git a/csrc/cpu/fpsample_cpu.cpp b/csrc/cpu/fpsample_cpu.cpp
+index a51c9f2..d476f36 100644
+--- a/csrc/cpu/fpsample_cpu.cpp
++++ b/csrc/cpu/fpsample_cpu.cpp
+@@ -43 +43 @@ std::tuple<Tensor, Tensor> sample_cpu(const Tensor &x, int64_t k,
+-        bucket_fps_kdline(x_reshaped.const_data_ptr<float>(),
++        bucket_fps_kdline(x_reshaped.data_ptr<float>(),
+@@ -45,2 +45,2 @@ std::tuple<Tensor, Tensor> sample_cpu(const Tensor &x, int64_t k,
+-                          cur_start_idx.const_data_ptr<int64_t>()[0], height,
+-                          ret_indices.mutable_data_ptr<int64_t>());
++                          cur_start_idx.data_ptr<int64_t>()[0], height,
++                          ret_indices.data_ptr<int64_t>());
+@@ -52 +52 @@ std::tuple<Tensor, Tensor> sample_cpu(const Tensor &x, int64_t k,
+-                        x_reshaped[i].const_data_ptr<float>(),
++                        x_reshaped[i].data_ptr<float>(),
+@@ -54,2 +54,2 @@ std::tuple<Tensor, Tensor> sample_cpu(const Tensor &x, int64_t k,
+-                        cur_start_idx.const_data_ptr<int64_t>()[i], height,
+-                        ret_indices[i].mutable_data_ptr<int64_t>());
++                        cur_start_idx.data_ptr<int64_t>()[i], height,
++                        ret_indices[i].data_ptr<int64_t>());
+diff --git a/setup.py b/setup.py
+index 97e4a5b..55158c3 100644
+--- a/setup.py
++++ b/setup.py
+@@ -21 +21 @@ extra_compile_args = {"cxx": ["-O3"]}
+-extra_link_args = []
++extra_link_args = ["-ltorch_cuda", "-lc10_cuda"]

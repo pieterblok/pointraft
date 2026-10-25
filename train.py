@@ -1,149 +1,327 @@
+"""Train PointRAFT with the original repository protocol."""
+
 ## thanks to: https://colab.research.google.com/drive/1D45E5bUK3gQ40YpZo65ozs7hg5l-eo_U?usp=sharing#scrollTo=hUbRw_BhLuXr
 
+import argparse
+import sys
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import os
 from pathlib import Path
-import random
-import numpy as np
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import torch_geometric.transforms as T
-from torch_geometric.loader import DataLoader, ImbalancedSampler
+from torch import nn, optim
+from torch_geometric.loader import DataLoader
 from torch_geometric.typing import WITH_TORCH_CLUSTER
 
-from data import *
-from utils import *
-from models import *
-model_dict = {'dgcnn': DGCNN,
-              'pointraft': PointRAFT,
-              'pointnet': PointNet,
-              'pointnet2': PointNet2,
-              'pointtransformer': PointTransformer,
-              'randlanet': RandLANet}
+from data import PointCloudDataset
+from models import PointRAFT
+from utils.provenance import (
+    git_commit,
+    git_source_dirty,
+    runtime_versions,
+    sha256_file,
+    write_json,
+)
+from utils.reproducibility import (
+    RANDOM_SEED,
+    make_generator,
+    seed_everything,
+    seed_worker,
+)
+from utils.visualize import visualize_augmentation, visualize_batch
+
+CHECKPOINT_PATH = Path("weights/pointraft.pth")
+TRAIN_METRICS_PATH = Path("results/pointraft/train_metrics.csv")
+TRAIN_PROVENANCE_PATH = Path("results/pointraft/train.provenance.json")
 
 
-if not WITH_TORCH_CLUSTER:
-    quit("This code requires 'torch-cluster'")
+def main() -> None:
+    """Train PointRAFT with the original repository protocol."""
+    if not WITH_TORCH_CLUSTER:
+        raise SystemExit("This code requires 'torch-cluster'")
 
+    parser = argparse.ArgumentParser(description="Train PointRAFT.")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow replacing an existing model weight.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+        help="Number of training epochs (default: 50).",
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.0005,
+        help="Adam learning rate (default: 0.0005).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Batch size (default: 32; keep unchanged for full runs).",
+    )
+    parser.add_argument(
+        "--max-train-batches",
+        type=int,
+        help="Bound training batches per epoch for a prerun.",
+    )
+    parser.add_argument(
+        "--max-val-batches",
+        type=int,
+        help="Bound validation batches per epoch for a prerun.",
+    )
+    args = parser.parse_args()
 
+    if args.epochs < 1:
+        parser.error("--epochs must be positive")
+    if args.learning_rate <= 0:
+        parser.error("--learning-rate must be positive")
+    if args.batch_size < 2:
+        parser.error("--batch-size must be at least 2 for batch-normalized models")
+    for argument in ("max_train_batches", "max_val_batches"):
+        value = getattr(args, argument)
+        if value is not None and value < 1:
+            parser.error(f"--{argument.replace('_', '-')} must be positive")
 
-if __name__ == '__main__':
-    torch.manual_seed(133)
-    random.seed(133)
-    np.random.seed(133)
-
+    seed_everything()
 
     ## File paths
     current_file = Path(__file__).resolve()
     project_root = current_file.parent
-    datafolder = os.path.join(project_root, 'data', '3DPotatoTwin')
+    datafolder = project_root / "data" / "3DPotatoTwin"
 
-    data_root = os.path.join(datafolder, '1_rgbd', '2_pcd')
-    splits_csv = os.path.join(datafolder, 'splits.csv')
-    target_csv = os.path.join(datafolder, 'ground_truth.csv')
+    data_root = os.path.join(datafolder, "1_rgbd", "2_pcd")
+    splits_csv = os.path.join(datafolder, "splits.csv")
+    target_csv = os.path.join(datafolder, "ground_truth.csv")
 
-    weightsfolder = os.path.join(project_root, 'weights')
-    os.makedirs(weightsfolder, exist_ok=True)
+    weightsfolder = project_root / "weights"
+    weightsfolder.mkdir(parents=True, exist_ok=True)
+    model_name = "pointraft"
+    checkpoint_path = project_root / CHECKPOINT_PATH
+    if checkpoint_path.exists() and not args.overwrite:
+        parser.error(f"{checkpoint_path} already exists; use --overwrite to replace it")
 
+    print(f"Dataset: {datafolder}")
+    print(f"Model: {model_name}")
+    print(f"Checkpoint: {checkpoint_path}")
+
+    log_path = project_root / TRAIN_METRICS_PATH
+    provenance_path = project_root / TRAIN_PROVENANCE_PATH
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "epoch,train_loss,val_loss,val_prediction_std,learning_rate\n",
+        encoding="utf-8",
+    )
 
     ## Data preprocessing and augmentation
     pre_transform = T.Center()
-    transform = T.Compose([T.RandomJitter(0.0005), 
-                           T.RandomRotate(2, axis=0), 
-                           T.RandomRotate(2, axis=1), 
-                           T.RandomRotate(2, axis=2),
-                           T.RandomFlip(axis=0, p=0.5),
-                           T.RandomFlip(axis=1, p=0.5),
-                           T.RandomShear(0.2)])
-
+    transform = T.Compose(
+        [
+            T.RandomJitter(0.0005),
+            T.RandomRotate(2, axis=0),
+            T.RandomRotate(2, axis=1),
+            T.RandomRotate(2, axis=2),
+            T.RandomFlip(axis=0, p=0.5),
+            T.RandomFlip(axis=1, p=0.5),
+            T.RandomShear(0.2),
+        ]
+    )
 
     ## Create/load InMemoryDatasets
     ## Please remove the "processed" folder in your data_root if you want to redo the data augmentation!
-    train_dataset = PointCloudDataset(data_root, 
-                                      splits_csv, 
-                                      target_csv, 
-                                      target_col="weight_g_inctack", 
-                                      class_col="weight_class", 
-                                      split="train",
-                                      conveyor_depth={'2023': 0.345, '2024': 0.460, '2025': 0.465},
-                                      search_col="growing_season",
-                                      max_height=0.08,
-                                      pre_transform=pre_transform, 
-                                      transform=transform, 
-                                      num_points=1024, 
-                                      apply_augmentation=True)
-    
-    val_dataset = PointCloudDataset(data_root, 
-                                    splits_csv, 
-                                    target_csv, 
-                                    target_col="weight_g_inctack", 
-                                    split="val",
-                                    conveyor_depth={'2023': 0.345, '2024': 0.460, '2025': 0.465},
-                                    search_col="growing_season",
-                                    max_height=0.08,
-                                    pre_transform=pre_transform, 
-                                    transform=transform, 
-                                    num_points=1024, 
-                                    apply_augmentation=False)
+    train_dataset = PointCloudDataset(
+        data_root,
+        splits_csv,
+        target_csv,
+        target_col="weight_g_inctack",
+        class_col="weight_class",
+        split="train",
+        conveyor_depth={"2023": 0.345, "2024": 0.460, "2025": 0.465},
+        search_col="growing_season",
+        max_height=0.08,
+        pre_transform=pre_transform,
+        transform=transform,
+        num_points=1024,
+        apply_augmentation=True,
+    )
 
+    val_dataset = PointCloudDataset(
+        data_root,
+        splits_csv,
+        target_csv,
+        target_col="weight_g_inctack",
+        split="val",
+        conveyor_depth={"2023": 0.345, "2024": 0.460, "2025": 0.465},
+        search_col="growing_season",
+        max_height=0.08,
+        pre_transform=pre_transform,
+        transform=transform,
+        num_points=1024,
+        apply_augmentation=False,
+    )
 
     ## Dataloaders
-    train_sampler = ImbalancedSampler(train_dataset.cls)
-    train_loader = DataLoader(train_dataset, batch_size=32, sampler=train_sampler, num_workers=6)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=6)
-
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=6,
+        worker_init_fn=seed_worker,
+        generator=make_generator(RANDOM_SEED + 1),
+    )
+    val_loader_dataset = val_dataset
+    if args.max_val_batches is not None:
+        sample_count = min(
+            len(val_dataset),
+            args.max_val_batches * args.batch_size,
+        )
+        if sample_count == 1:
+            val_indices = [0]
+        else:
+            val_indices = [
+                round(index * (len(val_dataset) - 1) / (sample_count - 1))
+                for index in range(sample_count)
+            ]
+        val_loader_dataset = val_dataset.index_select(val_indices)
+    val_loader = DataLoader(
+        val_loader_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=6,
+        worker_init_fn=seed_worker,
+        generator=make_generator(RANDOM_SEED + 2),
+    )
 
     ## Initialize the training parameters
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_name = 'pointraft'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     visualize = False
-    model = model_dict[model_name]().to(device)
+    model = PointRAFT().to(device)
 
     criterion = nn.SmoothL1Loss(beta=20)
-    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=args.learning_rate,
+        weight_decay=0.0001,
+    )
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.97)
 
     if visualize:
         visualize_batch(train_loader)
         visualize_augmentation(train_loader, pre_transform)
 
-
     ## Training
-    best_loss = float('inf')
-    for epoch in range(1, 51):
+    best_loss = float("inf")
+    best_epoch = 0
+    for epoch in range(1, args.epochs + 1):
         model.train()
         train_loss = 0
-        for train_data in train_loader:
+        train_batches = 0
+        for batch_index, train_data in enumerate(train_loader):
+            if (
+                args.max_train_batches is not None
+                and batch_index >= args.max_train_batches
+            ):
+                break
             train_data = train_data.to(device)
             optimizer.zero_grad()
             pred = model(train_data)
             target = train_data.y
+            if pred.shape != target.shape:
+                raise RuntimeError(
+                    f"Prediction shape {tuple(pred.shape)} does not match "
+                    f"target shape {tuple(target.shape)}"
+                )
             loss = criterion(pred, target)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            train_batches += 1
 
-        train_loss /= len(train_loader)
+        train_loss /= train_batches
 
         model.eval()
         val_loss = 0
-        for val_data in val_loader:
+        val_batches = 0
+        val_predictions = []
+        for batch_index, val_data in enumerate(val_loader):
+            if args.max_val_batches is not None and batch_index >= args.max_val_batches:
+                break
             val_data = val_data.to(device)
             with torch.no_grad():
                 pred = model(val_data)
                 target = val_data.y
+                if pred.shape != target.shape:
+                    raise RuntimeError(
+                        f"Prediction shape {tuple(pred.shape)} does not match "
+                        f"target shape {tuple(target.shape)}"
+                    )
                 loss = criterion(pred, target)
-                val_loss  += loss.item()
-                
-        val_loss /= len(val_loader)
+                val_loss += loss.item()
+                val_batches += 1
+                val_predictions.append(pred.detach().cpu())
 
-        print(f'Epoch: {epoch:03d}, Train Loss: {train_loss:.5f}, Val Loss: {val_loss:.5f}')
+        val_loss /= val_batches
+        val_prediction_std = torch.cat(val_predictions).std(unbiased=False).item()
+
+        print(
+            f"Epoch: {epoch:03d}, Train Loss: {train_loss:.5f}, "
+            f"Val Loss: {val_loss:.5f}, Val Prediction SD: {val_prediction_std:.5f}"
+        )
+        with log_path.open("a", encoding="utf-8") as log_file:
+            log_file.write(
+                f"{epoch},{train_loss:.8f},{val_loss:.8f},"
+                f"{val_prediction_std:.8f},"
+                f"{optimizer.param_groups[0]['lr']:.12g}\n"
+            )
         if val_loss < best_loss:
             best_loss = val_loss
-            torch.save(model.state_dict(), os.path.join(weightsfolder, model_name + '.pth'))
-            print('Saved best model!')
+            best_epoch = epoch
+            torch.save(model.state_dict(), checkpoint_path)
+            print("Saved best model!")
         scheduler.step()
+
+    write_json(
+        provenance_path,
+        {
+            "artifact": model_name,
+            "batch_size": args.batch_size,
+            "best_epoch": best_epoch,
+            "best_validation_loss": best_loss,
+            "code_commit": git_commit(project_root),
+            "code_dirty": git_source_dirty(project_root),
+            "command": [sys.executable, *sys.argv],
+            "dataset": str(datafolder.resolve()),
+            "device": str(device),
+            "epochs": args.epochs,
+            "ground_truth_sha256": sha256_file(Path(target_csv)),
+            "learning_rate": args.learning_rate,
+            "max_train_batches": args.max_train_batches,
+            "max_val_batches": args.max_val_batches,
+            "model": model_name,
+            "optimizer": "Adam",
+            "train_sampler": "shuffle",
+            "scheduler": "ExponentialLR(gamma=0.97)",
+            "seed": RANDOM_SEED,
+            "splits_sha256": sha256_file(Path(splits_csv)),
+            "status": "completed",
+            "train_samples": len(train_dataset),
+            "validation_samples": len(val_dataset),
+            "validation_prediction_std": val_prediction_std,
+            "validation_samples_evaluated": len(val_loader_dataset),
+            "versions": runtime_versions(),
+            "weight_decay": 0.0001,
+            "weight_sha256": sha256_file(checkpoint_path),
+        },
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import torch
-import random
 import pandas as pd
 import numpy as np
 import open3d as o3d
@@ -49,8 +48,7 @@ class PointCloudDataset(InMemoryDataset):
         # ---- 2R1-11
         # ---- 2R1-12
 
-        all_files = list(Path(self.root).rglob("*.ply"))
-        random.shuffle(all_files)
+        all_files = sorted(Path(self.root).rglob("*.ply"))
         return [str(f) for f in all_files if f.parent.name in self.ids]
 
     @property
@@ -107,7 +105,7 @@ class PointCloudDataset(InMemoryDataset):
 
             # Downsample points using FPS
             if points.size(0) > self.num_points:
-                points, _ = torch_fpsample.sample(points, self.num_points)
+                points, _ = torch_fpsample.sample(points, self.num_points, start_idx=0)
 
             # Create the data object
             if self.set_class:
