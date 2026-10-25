@@ -9,16 +9,23 @@ import numpy as np
 import pandas as pd
 
 MODEL_FILES = {
-    "Linear regression": "results/model_comparison/predictions/linear_regression.csv",
+    # "Linear regression": "results/model_comparison/predictions/linear_regression.csv",
     "PointNet": "results/model_comparison/predictions/pointnet.csv",
     "PointNet++": "results/model_comparison/predictions/pointnet2.csv",
     "DGCNN": "results/model_comparison/predictions/dgcnn.csv",
     "PointMLP": "results/model_comparison/predictions/pointmlp.csv",
     "RandLA-Net": "results/model_comparison/predictions/randlanet.csv",
-    "PTv3-S": "results/model_comparison/predictions/ptv3.csv",
+    # "PTv3-S": "results/model_comparison/predictions/ptv3.csv",
     "PTv3-Compact": "results/model_comparison/predictions/ptv3_compact.csv",
     "PointRAFT": "results/pointraft/predictions.csv",
 }
+
+# Ground-truth weight classes; each is (lower, upper] in grams.
+WEIGHT_CLASS_EDGES_G = (0, 100, 200, 300, 400, 500, 600)
+WEIGHT_CLASS_LABELS = [
+    f"{lower}-{upper}"
+    for lower, upper in zip(WEIGHT_CLASS_EDGES_G[:-1], WEIGHT_CLASS_EDGES_G[1:])
+]
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,7 +87,7 @@ def load_predictions(
     Returns
     -------
     pandas.DataFrame
-        Validated predictions with cultivar and season columns.
+        Validated predictions with cultivar, season, and weight-class columns.
     """
     predictions = pd.read_csv(project_root / relative_path)
     required = {"file_name", "unique_id", "gt", "pred"}
@@ -112,6 +119,17 @@ def load_predictions(
     predictions["growing_season"] = predictions["unique_id"].map(
         metadata["growing_season"]
     )
+    predictions["weight_class"] = pd.cut(
+        predictions["gt"],
+        bins=WEIGHT_CLASS_EDGES_G,
+        labels=WEIGHT_CLASS_LABELS,
+        right=True,
+    )
+    if predictions["weight_class"].isna().any():
+        raise ValueError(
+            f"Ground truth outside the weight classes in {relative_path}: "
+            f"{WEIGHT_CLASS_EDGES_G[0]}-{WEIGHT_CLASS_EDGES_G[-1]} g"
+        )
     return predictions
 
 
@@ -145,7 +163,7 @@ def calculate_grouped_metrics(
     model: str,
     predictions: pd.DataFrame,
 ) -> list[dict[str, float | int | str]]:
-    """Calculate cultivar, season, and overall metrics for one model.
+    """Calculate cultivar, season, weight-class, and overall metrics for one model.
 
     Parameters
     ----------
@@ -163,9 +181,10 @@ def calculate_grouped_metrics(
     group_specs = (
         ("cultivar", "cultivar"),
         ("growing_season", "season"),
+        ("weight_class", "weight_class"),
     )
     for column, group_type in group_specs:
-        for group, subset in predictions.groupby(column, sort=True):
+        for group, subset in predictions.groupby(column, sort=True, observed=True):
             records.append(
                 {
                     "model": model,

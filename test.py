@@ -36,6 +36,9 @@ PREDICTIONS_PATH = Path("results/pointraft/predictions.csv")
 TEST_METRICS_PATH = Path("results/pointraft/test_metrics.txt")
 TEST_PROVENANCE_PATH = Path("results/pointraft/test.provenance.json")
 
+# Ground-truth weight classes for the sub-analysis; each is (lower, upper] in grams.
+WEIGHT_CLASS_EDGES_G = (0, 100, 200, 300, 400, 500, 600)
+
 
 def main() -> None:
     """Evaluate PointRAFT with the original repository protocol."""
@@ -283,6 +286,21 @@ def main() -> None:
             print(f"R2: {r2_score(gt_sel, pred_sel):.2f}\r\n")
     except KeyError as error:
         print(f"Skipped subgroup analyses because metadata is missing: {error}")
+
+    print("=== Sub-analyses per weight class ===")
+    for lower, upper in zip(WEIGHT_CLASS_EDGES_G[:-1], WEIGHT_CLASS_EDGES_G[1:]):
+        indices = (ground_truths > lower) & (ground_truths <= upper)
+        if not indices.any():
+            continue
+
+        gt_sel = ground_truths[indices]
+        pred_sel = predictions[indices]
+
+        print(f"Weight class: {lower}-{upper} g")
+        print(f"Tubers: {len(np.unique(unique_ids[indices]))}")
+        print(f"Point clouds: {len(gt_sel)}")
+        print(f"MAE weight: {mean_absolute_error(gt_sel, pred_sel):.1f} g")
+        print(f"RMSE weight: {root_mean_squared_error(gt_sel, pred_sel):.1f} g\r\n")
 
 
 if __name__ == "__main__":
