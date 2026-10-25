@@ -20,9 +20,10 @@ from .pointcloud import PointCloudUtils
 
 CONVEYOR_DEPTH = {"2023": 0.345, "2024": 0.460, "2025": 0.465}
 PIPELINE_SCOPE = (
-    "Precomputed instance mask and RGB-D images through point-cloud creation, "
-    "DBSCAN filtering, PointRAFT preprocessing (including host-to-device "
-    "transfer when applicable), and final regression. Instance segmentation "
+    "Precomputed instance mask and RGB-D images through file loading (timed "
+    "separately, as a streaming camera replaces it on a harvester), point-cloud "
+    "creation, DBSCAN filtering, PointRAFT preprocessing (including host-to-device "
+    "transfer when applicable), and network inference. Instance segmentation "
     "and one-time model loading are excluded."
 )
 
@@ -143,10 +144,11 @@ class InferencePipeline:
             raise RuntimeError(f"No test RGB images found under {image_root}")
         return samples[:limit] if limit else samples
 
-    def create_point_cloud(
-        self, rgb_file: Path
-    ) -> Tuple[o3d.geometry.PointCloud, str]:
-        """Create an unfiltered point cloud from one masked RGB-D pair.
+    def load_rgbd(self, rgb_file: Path) -> Tuple[np.ndarray, np.ndarray]:
+        """Read one masked RGB-D pair from disk.
+
+        On a harvester the camera streams these frames, so this stage is
+        specific to the offline benchmark and is timed separately.
 
         Parameters
         ----------
@@ -156,7 +158,7 @@ class InferencePipeline:
         Returns
         -------
         tuple
-            Unfiltered Open3D point cloud and tuber identifier.
+            RGBA image and depth image.
         """
         depth_file = Path(str(rgb_file).replace("_rgb_", "_depth_"))
         rgba = cv2.imread(str(rgb_file), cv2.IMREAD_UNCHANGED)
@@ -165,7 +167,27 @@ class InferencePipeline:
             raise RuntimeError(f"Failed to read RGB-D pair for {rgb_file}")
         if rgba.ndim != 3 or rgba.shape[2] < 4:
             raise RuntimeError(f"RGB image does not contain an alpha mask: {rgb_file}")
+        return rgba, depth
 
+    def create_point_cloud(
+        self, rgba: np.ndarray, depth: np.ndarray, rgb_file: Path
+    ) -> Tuple[o3d.geometry.PointCloud, str]:
+        """Create an unfiltered point cloud from one loaded masked RGB-D pair.
+
+        Parameters
+        ----------
+        rgba
+            RGBA image whose alpha channel contains the precomputed mask.
+        depth
+            Depth image aligned with ``rgba``.
+        rgb_file
+            RGB image path, used for the tuber identifier and error messages.
+
+        Returns
+        -------
+        tuple
+            Unfiltered Open3D point cloud and tuber identifier.
+        """
         mask = rgba[:, :, -1]
         x, y, width, height = cv2.boundingRect(mask)
         if width == 0 or height == 0:
@@ -282,7 +304,8 @@ class InferencePipeline:
         dict
             Point counts, object height, and prediction.
         """
-        unfiltered, tuber_id = self.create_point_cloud(rgb_file)
+        rgba, depth = self.load_rgbd(rgb_file)
+        unfiltered, tuber_id = self.create_point_cloud(rgba, depth, rgb_file)
         filtered = self.filter_point_cloud(unfiltered)
         data, object_height, filtered_points = self.prepare_model_input(
             filtered, tuber_id

@@ -27,10 +27,11 @@ import torch_geometric
 from .pipeline import PIPELINE_SCOPE, PROJECT_ROOT, InferencePipeline, resolve_device
 
 STAGE_FIELDS = (
-    "rgbd_to_point_cloud_ms",
+    "file_loading_ms",
+    "rgbd_to_pointcloud_ms",
     "dbscan_ms",
     "preprocessing_ms",
-    "regression_ms",
+    "network_inference_ms",
     "end_to_end_ms",
 )
 SAMPLE_FIELDS = (
@@ -301,8 +302,12 @@ def benchmark_sample(
     total_started = time.perf_counter_ns()
 
     started = time.perf_counter_ns()
-    unfiltered, tuber_id = pipeline.create_point_cloud(rgb_file)
-    rgbd_ms = (time.perf_counter_ns() - started) / 1_000_000
+    rgba, depth = pipeline.load_rgbd(rgb_file)
+    file_loading_ms = (time.perf_counter_ns() - started) / 1_000_000
+
+    started = time.perf_counter_ns()
+    unfiltered, tuber_id = pipeline.create_point_cloud(rgba, depth, rgb_file)
+    rgbd_to_pointcloud_ms = (time.perf_counter_ns() - started) / 1_000_000
 
     started = time.perf_counter_ns()
     filtered = pipeline.filter_point_cloud(unfiltered)
@@ -316,7 +321,7 @@ def benchmark_sample(
 
     started = time.perf_counter_ns()
     prediction = pipeline.predict(data)
-    regression_ms = (time.perf_counter_ns() - started) / 1_000_000
+    network_inference_ms = (time.perf_counter_ns() - started) / 1_000_000
     end_to_end_ms = (time.perf_counter_ns() - total_started) / 1_000_000
 
     return {
@@ -328,10 +333,11 @@ def benchmark_sample(
         "points_model_input": data.pos.size(0),
         "height_m": object_height,
         "prediction_g": prediction.item(),
-        "rgbd_to_point_cloud_ms": rgbd_ms,
+        "file_loading_ms": file_loading_ms,
+        "rgbd_to_pointcloud_ms": rgbd_to_pointcloud_ms,
         "dbscan_ms": dbscan_ms,
         "preprocessing_ms": preprocessing_ms,
-        "regression_ms": regression_ms,
+        "network_inference_ms": network_inference_ms,
         "end_to_end_ms": end_to_end_ms,
     }
 
@@ -581,7 +587,8 @@ def run(args: argparse.Namespace) -> None:
     setup_ms = (time.perf_counter_ns() - setup_started) / 1_000_000
     samples = pipeline.test_samples(args.limit)
 
-    unfiltered, tuber_id = pipeline.create_point_cloud(samples[0])
+    rgba, depth = pipeline.load_rgbd(samples[0])
+    unfiltered, tuber_id = pipeline.create_point_cloud(rgba, depth, samples[0])
     filtered = pipeline.filter_point_cloud(unfiltered)
     warmup_data, _, _ = pipeline.prepare_model_input(filtered, tuber_id)
     warmup_started = time.perf_counter_ns()
